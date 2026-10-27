@@ -15,6 +15,12 @@
  *      این دو اندپوینت سمت سرور fetch می‌شوند تا محدودیت CORS مرورگر و
  *      مشکلات دسترسی از ایران دور بزند؛ قیمت‌ها ۶۰ ثانیه کش می‌شوند.
  *
+ *   3) v1.1.0 — GET /ip-check → { ip, country, sanctioned, ts }
+ *      اپ «مدیریت دارایی» در بخش تنظیمات هر ۳ ثانیه وضعیت IP کاربر را چک
+ *      می‌کند؛ وقتی سه سرویس عمومی geo-IP در دسترس نبودند، این endpoint
+ *      (روی سرور خودمان) کشورِ IP تماس‌گیرنده را از x-forwarded-for تشخیص
+ *      می‌دهد. نتیجه ۶۰ ثانیه per-IP کش می‌شود.
+ *
  * بدون هیچ وابستگی خارجی (فقط Node.js >= 18 با fetch داخلی).
  * Deploy روی Railway: build = `npx expo export --platform web`،
  * start = `node server.js` (تنظیم شده در railway.json).
@@ -317,6 +323,53 @@ async function handleAlanchand(res) {
   }
 }
 
+// ─── IP check (v1.1.0 — بررسی IP کاربر برای بخش تنظیمات اپ) ───────────
+const SANCTIONED_COUNTRIES = new Set(['IR', 'CU', 'KP', 'SY']);
+const ipCache = new Map(); // ip → { at, payload }
+
+function clientIp(req) {
+  const xf = req.headers['x-forwarded-for'];
+  if (typeof xf === 'string' && xf.length > 0) {
+    return xf.split(',')[0].trim();
+  }
+  return (req.socket && req.socket.remoteAddress) || '';
+}
+
+async function lookupCountry(ip) {
+  // ipwho.is — رایگان، بدون کلید؛ ۴ ثانیه مهلت
+  const res = await fetchWithTimeout(`https://ipwho.is/${encodeURIComponent(ip)}`, {}, 4000);
+  if (!res.ok) throw new Error(`ipwho HTTP ${res.status}`);
+  const data = await res.json();
+  if (data && data.success && typeof data.country_code === 'string') {
+    return data.country_code;
+  }
+  throw new Error('ipwho: no country');
+}
+
+async function handleIpCheck(req, res) {
+  const ip = clientIp(req);
+  if (!ip) {
+    return sendJson(res, 200, { ip: '', country: null, sanctioned: false, ts: Date.now() });
+  }
+  const hit = ipCache.get(ip);
+  if (hit && Date.now() - hit.at < 60_000) return sendJson(res, 200, hit.payload);
+  try {
+    const country = await lookupCountry(ip);
+    const payload = {
+      ip,
+      country,
+      sanctioned: SANCTIONED_COUNTRIES.has(country.toUpperCase()),
+      ts: Date.now(),
+    };
+    ipCache.set(ip, { at: Date.now(), payload });
+    sendJson(res, 200, payload);
+  } catch (e) {
+    // تشخیص ناموفق ≠ بلاک — فقط IP برمی‌گردد؛ اپ خودش سراغ provider بعدی می‌رود
+    console.error('[ip-check] lookup failed:', e.message);
+    sendJson(res, 200, { ip, country: null, sanctioned: false, ts: Date.now() });
+  }
+}
+
 // ─── HTTP server ────────────────────────────────────────────────────────
 const server = http.createServer(async (req, res) => {
   const urlPath = (req.url || '/').split('?')[0].split('#')[0];
@@ -336,6 +389,7 @@ const server = http.createServer(async (req, res) => {
 
   if (urlPath === '/nobitex/usdt-toman') return handleNobitex(res);
   if (urlPath === '/alanchand/usdt-toman') return handleAlanchand(res);
+  if (urlPath === '/ip-check') return handleIpCheck(req, res);
 
   if (urlPath === '/health' || urlPath === '/api/health') {
     const hasDist = fs.existsSync(path.join(DIST, 'index.html'));
@@ -343,7 +397,7 @@ const server = http.createServer(async (req, res) => {
       status: 'ok',
       service: 'asset-management web + price proxy',
       web: hasDist ? 'ready' : 'dist missing (run: npx expo export --platform web)',
-      endpoints: ['/nobitex/usdt-toman', '/alanchand/usdt-toman'],
+      endpoints: ['/nobitex/usdt-toman', '/alanchand/usdt-toman', '/ip-check'],
     });
   }
 

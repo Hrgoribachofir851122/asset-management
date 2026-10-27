@@ -1,10 +1,13 @@
 # Nixpacks config for Railway
-# - Node 20 پین شده
-# - فاز install بازنویسی شد: npm ci پیش‌فرض Nixpacks با production=true و
-#   وابستگی‌های peer سخت‌گیر اجرا می‌شد و بیلد را می‌شکست؛ اینجا صریح با
-#   --include=dev (برای نصب expo در build) و --legacy-peer-deps نصب می‌کنیم.
+# - Node 22 پین شد: پکیج‌های RN 0.81.5 / Metro 0.83 به >= 20.19.4 نیاز
+#   دارند و اسنپ‌شات nodejs_20 ناکس‌پک ۲۰.۱۸.۱ می‌دهد (EBADENGINE)؛ Node 22
+#   همهٔ شرط‌ها را پاس می‌کند.
+# - فاز install بازنویسی شد: npm ci پیش‌فرض Nixpacks (با production=true و
+#   peer-dependency سخت‌گیر) بیلد را می‌شکند؛ npm install هم قفل ناهماهنگ
+#   package-lock را خودش درست می‌کند هم با --legacy-peer-deps تعارض peer را
+#   دور می‌زند و با --include=dev ابزار بیلد expo را نصب نگه می‌دارد.
 [phases.setup]
-nixPkgs = ["nodejs_20"]
+nixPkgs = ["nodejs_22"]
 
 [phases.install]
 cmd = "npm install --legacy-peer-deps --include=dev"
