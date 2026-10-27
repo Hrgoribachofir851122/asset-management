@@ -1,0 +1,3 @@
+# Pin Node.js 20 برای بیلد Railway (Nixpacks)
+[phases.setup]
+nixPkgs = ["nodejs_20"]
