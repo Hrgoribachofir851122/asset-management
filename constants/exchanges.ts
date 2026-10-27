@@ -1,0 +1,195 @@
+import { ExchangeInfo, ExchangeId } from '@/types/crypto';
+
+export const EXCHANGES: Record<ExchangeId, ExchangeInfo> = {
+  binance: {
+    id: 'binance',
+    name: 'بایننس (Binance)',
+    makerFee: 0.0002,
+    takerFee: 0.0004,
+    futuresBaseUrl: 'https://fapi.binance.com',
+  },
+  bybit: {
+    id: 'bybit',
+    name: 'بای‌بیت (Bybit)',
+    makerFee: 0.0002,
+    takerFee: 0.00055,
+    futuresBaseUrl: 'https://api.bybit.com',
+  },
+  okx: {
+    id: 'okx',
+    name: 'اوکی‌اکس (OKX)',
+    makerFee: 0.0002,
+    takerFee: 0.0005,
+    futuresBaseUrl: 'https://www.okx.com',
+  },
+  kucoin: {
+    id: 'kucoin',
+    name: 'کوکوین (KuCoin)',
+    makerFee: 0.0002,
+    takerFee: 0.0006,
+    futuresBaseUrl: 'https://api-futures.kucoin.com',
+  },
+  toobit: {
+    id: 'toobit',
+    name: 'توبیت (Toobit)',
+    makerFee: 0.0002,
+    takerFee: 0.0006,
+    futuresBaseUrl: 'https://api.toobit.com',
+  },
+  bingx: {
+    id: 'bingx',
+    name: 'بینگ‌ایکس (BingX)',
+    makerFee: 0.0002,
+    takerFee: 0.0005,
+    futuresBaseUrl: 'https://open-api.bingx.com',
+  },
+  mexc: {
+    id: 'mexc',
+    name: 'مکسی (MEXC)',
+    makerFee: 0.0002,
+    takerFee: 0.0004,
+    futuresBaseUrl: 'https://contract.mexc.com',
+  },
+
+  bitunix: {
+    id: 'bitunix',
+    name: 'بیتیونیکس (Bitunix)',
+    makerFee: 0.0002,
+    takerFee: 0.0005,
+    futuresBaseUrl: 'https://api.bitunix.com',
+  },
+  bitget: {
+    id: 'bitget',
+    name: 'بیتگت (Bitget)',
+    makerFee: 0.0002,
+    takerFee: 0.0006,
+    futuresBaseUrl: 'https://api.bitget.com',
+  },
+  gateio: {
+    id: 'gateio',
+    name: 'گیت (Gate.io)',
+    makerFee: 0.00015,
+    takerFee: 0.0005,
+    futuresBaseUrl: 'https://api.gateio.ws',
+  },
+  htx: {
+    id: 'htx',
+    name: 'اچ‌تی‌ایکس (HTX)',
+    makerFee: 0.0002,
+    takerFee: 0.0005,
+    futuresBaseUrl: 'https://api.htx.com',
+  },
+  coinex: {
+    id: 'coinex',
+    name: 'کوینکس (CoinEx)',
+    makerFee: 0.0003,
+    takerFee: 0.0005,
+    futuresBaseUrl: 'https://api.coinex.com',
+  },
+  xt: {
+    id: 'xt',
+    name: 'ایکس‌تی (XT.com)',
+    makerFee: 0.0002,
+    takerFee: 0.0005,
+    futuresBaseUrl: 'https://fapi.xt.com',
+  },
+  lbank: {
+    id: 'lbank',
+    name: 'ال‌بانک (LBank)',
+    makerFee: 0.0002,
+    takerFee: 0.0006,
+    futuresBaseUrl: 'https://api.lbank.info',
+  },
+  phemex: {
+    id: 'phemex',
+    name: 'فیمکس (Phemex)',
+    makerFee: 0.0001,
+    takerFee: 0.0006,
+    futuresBaseUrl: 'https://api.phemex.com',
+  },
+  superex: {
+    id: 'superex',
+    name: 'سوپراکس (SuperEx)',
+    makerFee: 0.0002,
+    takerFee: 0.0006,
+    futuresBaseUrl: 'https://api.superex.com',
+  },
+  bitmart: {
+    id: 'bitmart',
+    name: 'بیت‌مارت (BitMart)',
+    makerFee: 0.0002,
+    takerFee: 0.0006,
+    futuresBaseUrl: 'https://api-cloud.bitmart.com',
+  },
+  kcex: {
+    id: 'kcex',
+    name: 'کی‌سی‌اکس (KCEX)',
+    makerFee: 0.0002,
+    takerFee: 0.0006,
+    futuresBaseUrl: 'https://api.kcex.com',
+  },
+  orbiter: {
+    id: 'orbiter',
+    name: 'اوربیت (Orbiter)',
+    makerFee: 0.0002,
+    takerFee: 0.0006,
+    futuresBaseUrl: 'https://api.orbiter.finance',
+  },
+  huobi: {
+    id: 'huobi',
+    name: 'هوبی (Huobi)',
+    makerFee: 0.0002,
+    takerFee: 0.0005,
+    futuresBaseUrl: 'https://api.huobi.pro',
+  },
+  nobitex: {
+    id: 'nobitex',
+    name: 'نوبیتکس (Nobitex)',
+    makerFee: 0.001,
+    takerFee: 0.001,
+    futuresBaseUrl: 'https://api.nobitex.ir',
+  },
+  arzinja: {
+    id: 'arzinja',
+    name: 'ارزینجا (Arzinja)',
+    makerFee: 0.001,
+    takerFee: 0.001,
+    futuresBaseUrl: 'https://api.arzinja.ir',
+  },
+  iranicart: {
+    id: 'iranicart',
+    name: 'ایرانیکارت (Iranicart)',
+    makerFee: 0.001,
+    takerFee: 0.001,
+    futuresBaseUrl: 'https://api.iranicart.ir',
+  },
+  bitperp: {
+    id: 'bitperp',
+    name: 'بیت‌پرپ (BitPerp)',
+    makerFee: 0.0002,
+    takerFee: 0.0005,
+    futuresBaseUrl: 'https://bitperp.com',
+  },
+};
+
+export const EXCHANGE_LIST = Object.values(EXCHANGES);
+
+export const LEVERAGE_OPTIONS = [1, 2, 3, 5, 10, 15, 20, 25, 50, 75, 100, 125];
+
+export const RISK_REWARD_OPTIONS = ['1', '1.5', '2', '2.5', '3', '4', '5'];
+
+export const TIMEFRAME_OPTIONS = [
+  { value: '1m', label: '۱ دقیقه' },
+  { value: '3m', label: '۳ دقیقه' },
+  { value: '5m', label: '۵ دقیقه' },
+  { value: '15m', label: '۱۵ دقیقه' },
+  { value: '30m', label: '۳۰ دقیقه' },
+  { value: '1h', label: '۱ ساعت' },
+  { value: '2h', label: '۲ ساعت' },
+  { value: '4h', label: '۴ ساعت' },
+  { value: '6h', label: '۶ ساعت' },
+  { value: '8h', label: '۸ ساعت' },
+  { value: '12h', label: '۱۲ ساعت' },
+  { value: '1d', label: '۱ روز' },
+  { value: '1w', label: '۱ هفته' },
+];
