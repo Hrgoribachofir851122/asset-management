@@ -8,8 +8,6 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "build:web": "expo export --platform web",
-    "serve:web": "node server.js",
     "prebuild": "expo prebuild -p android",
     "build:apk": "cd android && ./gradlew assembleRelease"
   },
@@ -27,7 +25,7 @@
     "expo-splash-screen": "~31.0.12",
     "expo-status-bar": "~3.0.9",
     "expo-system-ui": "~6.0.9",
-    "lucide-react-native": "^0.475.0",
+    "lucide-react-native": "^0.520.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-native": "0.81.5",
@@ -43,9 +41,6 @@
     "eslint": "^9.31.0",
     "eslint-config-expo": "~10.0.0",
     "typescript": "~5.9.2"
-  },
-  "engines": {
-    "node": ">=18.0.0"
   },
   "private": true
 }

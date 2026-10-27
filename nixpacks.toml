@@ -1,3 +1,10 @@
-# Pin Node.js 20 برای بیلد Railway (Nixpacks)
+# Nixpacks config for Railway
+# - Node 20 پین شده
+# - فاز install بازنویسی شد: npm ci پیش‌فرض Nixpacks با production=true و
+#   وابستگی‌های peer سخت‌گیر اجرا می‌شد و بیلد را می‌شکست؛ اینجا صریح با
+#   --include=dev (برای نصب expo در build) و --legacy-peer-deps نصب می‌کنیم.
 [phases.setup]
 nixPkgs = ["nodejs_20"]
+
+[phases.install]
+cmd = "npm install --legacy-peer-deps --include=dev"
