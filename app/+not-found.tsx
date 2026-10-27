@@ -17,7 +17,7 @@ export default function NotFoundScreen() {
     <View style={styles.container}>
       <Compass size={48} color={colors.dark.textMuted} />
       <Text style={styles.title}>این صفحه پیدا نشد</Text>
-      <Pressable style={({ pressed }) => [styles.button, pressed && { opacity: 0.85 }]} onPress={() => router.replace('/(tabs)')}>
+      <Pressable style={({ pressed }) => [styles.button, pressed && { opacity: 0.85 }]} onPress={() => router.replace('/wallet')}>
         <Text style={styles.buttonText}>بازگشت به مدیریت دارایی</Text>
       </Pressable>
     </View>

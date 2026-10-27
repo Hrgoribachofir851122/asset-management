@@ -19,11 +19,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const SERVER_URL_KEY = '@scan_server_url';
 
 /**
- * The project's own backend, always baked into the app. Users who deploy
- * their own copy (Railway/other host) can override it via AsyncStorage.
+ * The app's own backend, always baked into the app (hidden default).
+ * Users who deploy their own copy (Railway/other host) can override it via AsyncStorage.
  */
 const DEFAULT_SERVER_URL =
-  process.env.EXPO_PUBLIC_SCANNER_SERVER_URL ?? 'https://pompay-production.up.railway.app';
+  process.env.EXPO_PUBLIC_SCANNER_SERVER_URL ?? 'https://asset-management1.up.railway.app';
 
 let cachedServerUrl: string | null = null;
 
