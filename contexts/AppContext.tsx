@@ -64,7 +64,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   telegramEnabled: false,
   themeMode: 'dark' as ThemeMode,
   autoScanEnabled: false,
-  // v1.2.0 — ریپوی GitHub برای چک بروزرسانی (در تنظیمات وارد می‌شود)
+  // v1.2.0 — (منسوخ v1.3.1) ریپوی GitHub حالا همیشه از constants/appInfo
+  // می‌آید (DEFAULT_GITHUB_REPO = ریپوی رسمی گیتهاب کاربر)؛ این فیلد فقط
+  // برای سازگاری با تنظیماتِ ذخیره‌شدهٔ قبلی نگه داشته شده و استفاده نمی‌شود.
   githubRepo: '',
 };
 

@@ -577,11 +577,28 @@ function normalizeWallets(list: unknown): BlockchainWallet[] {
         ? [o.network]
         : [];
     if (nets.length === 0) continue;
+    // v1.3.1 — FIX CRITICAL: per-network addresses (تون Tonkeeper / فایل‌کوین
+    // f1 / سولانا / بیت‌کوین …) باید بعد از خواندن از انبار «حفظ» شوند.
+    // قبلاً این فیلد اینجا حذف می‌شد و بدتر اینکه همین شکلِ لخت دوباره روی
+    // انبار نوشته می‌شد → «یه لحظه ارزها را نشون میده بعد دیگه نشون نمیده و
+    // ادرس تون/فایل‌کوین هم برای کپی نمیاد». حالا فقط کلیدهای شبکهٔ معتبر
+    // با مقدار غیرخالی نگه داشته می‌شوند.
+    let networkAddresses: Partial<Record<BlockchainNetwork, string>> | undefined;
+    if (o.networkAddresses && typeof o.networkAddresses === 'object') {
+      const clean: Partial<Record<BlockchainNetwork, string>> = {};
+      for (const [k, v] of Object.entries(o.networkAddresses)) {
+        if (k in NETWORKS && typeof v === 'string' && v.trim().length > 0) {
+          clean[k as BlockchainNetwork] = v.trim();
+        }
+      }
+      if (Object.keys(clean).length > 0) networkAddresses = clean;
+    }
     out.push({
       id: o.id,
       name: typeof o.name === 'string' && o.name.trim() ? o.name : 'کیف پول',
       networks: nets,
       address: o.address,
+      ...(networkAddresses ? { networkAddresses } : {}),
       addedAt: typeof o.addedAt === 'number' ? o.addedAt : Date.now(),
     });
   }

@@ -23,7 +23,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Download, RefreshCw, X, Sparkles } from 'lucide-react-native';
 import colors from '@/constants/colors';
 import { createThemedStyles } from '@/utils/themeStyles';
-import { useApp } from '@/contexts/AppContext';
 import { APP_VERSION, DEFAULT_GITHUB_REPO } from '@/constants/appInfo';
 import {
   checkForUpdate,
@@ -36,15 +35,14 @@ const DISMISS_KEY = '@update_banner_dismissed_version';
 const AUTO_CHECK_INTERVAL = 6 * 60 * 60_000;
 
 export default function UpdateBanner() {
-  const { settings } = useApp();
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
   const [dismissed, setDismissed] = useState(false);
   const [checking, setChecking] = useState(false);
   const lastAutoCheckRef = useRef(0);
 
-  // v1.3.0 — ریپو از قبل داخل برنامه است (DEFAULT_GITHUB_REPO)؛ تنظیماتِ
-  // کاربر فقط override است. «کاربر نخواد هربار دستی در تنظیمات واردش کند».
-  const repo = (settings.githubRepo ?? '').trim() || DEFAULT_GITHUB_REPO;
+  // v1.3.1 — ریپو همیشه همان ریپوی رسمی داخل برنامه است (ریپوی گیتهاب خود
+  // کاربر)؛ دیگر از تنظیمات خوانده نمی‌شود و هیچ ورودی‌ای هم لازم ندارد.
+  const repo = DEFAULT_GITHUB_REPO;
 
   const runCheck = useCallback(
     async (force: boolean) => {

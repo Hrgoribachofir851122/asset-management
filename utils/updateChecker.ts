@@ -110,12 +110,20 @@ async function fetchJsonT<T>(url: string): Promise<T> {
 /**
  * بررسی بروزرسانی. currentVersion را از فراخواننده می‌گیرد (appInfo.ts).
  * repo خالی/نامعتبر → { available: false, error: 'no-repo' }.
+ *
+ * v1.3.1 — «404 میزند درصورتی که باید بگه برنامه بروز است»:
+ *   • ریپو Release ندارد (GitHub 404) → دیگر خطا نیست؛ یعنی «هیچ
+ *     بروزرسانی‌ای منتشر نشده» → available: false بدون error تا رابط کاربری
+ *     پیام «برنامه بروز است» نشان دهد.
+ *   • فقط قطع‌بودن واقعی شبکه/GitHub جزو error باقی می‌ماند.
  */
 export async function checkForUpdate(repo: string, currentVersion: string): Promise<UpdateInfo> {
   const slug = repo.trim().replace(/^@/, '').replace(/\.git$/, '');
   if (!isValidRepoSlug(slug)) {
     return { available: false, currentVersion, error: 'no-repo' };
   }
+
+  const upToDate: UpdateInfo = { available: false, currentVersion };
 
   // 1) پروکسی سرور خودمان — از ایران هم بدون فیلترشکن در دسترس است
   try {
@@ -126,6 +134,8 @@ export async function checkForUpdate(repo: string, currentVersion: string): Prom
     if (!viaServer?.error && (viaServer?.tag_name || viaServer?.name || viaServer?.html_url)) {
       return normalizeRelease(viaServer, currentVersion);
     }
+    // سرورِ خودمان می‌گوید ریپو Release ندارد (یا ریپو پیدا نشد) → «بروز است»
+    if (viaServer?.error === 'no-release') return upToDate;
   } catch {}
 
   // 2) فال‌بک مستقیم (وقتی فیلترشکن روشن است کار می‌کند)
@@ -135,10 +145,13 @@ export async function checkForUpdate(repo: string, currentVersion: string): Prom
     );
     return normalizeRelease(rel, currentVersion);
   } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    // 404 یعنی «Release‌ای منتشر نشده» — خطا نیست، یعنی بروز است.
+    if (msg.includes('404')) return upToDate;
     return {
       available: false,
       currentVersion,
-      error: e instanceof Error ? e.message : 'github-unreachable',
+      error: msg || 'github-unreachable',
     };
   }
 }

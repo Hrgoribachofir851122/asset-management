@@ -46,6 +46,7 @@ import {
   Trc20Token,
   isEvmNetwork,
   polkadotStorageKey,
+  readBlockchainBalanceCache,
   ss58Decode,
   tronHexAddress,
   zilliqaBase16,
@@ -2078,6 +2079,22 @@ export async function fetchBlockchainWalletData(
     fetchedAt: Date.now(),
     notice: notices.length > 0 ? notices.join(' • ') : undefined,
   };
+  // v1.3.1 — «یه لحظه ارزها را نشون میده بعد دیگه نشون نمیده»: اگر همهٔ
+  // شبکه‌ها این دور خطا دادند (rate-limit / قطعی) و هیچ موجودی‌ای خوانده
+  // نشد، اسنپ‌شات قبلی را نگه می‌داریم تا لیست دارایی‌ها خالی نشود؛ فقط
+  // notice خطا زیر کارت می‌آید.
+  if (collected.length === 0 && notices.length > 0) {
+    const prev = await readBlockchainBalanceCache(wallet.id);
+    if (prev && prev.tokens.length > 0) {
+      const kept: BlockchainWalletData = {
+        ...prev,
+        fetchedAt: Date.now(),
+        notice: notices.join(' • '),
+      };
+      await writeBlockchainBalanceCache(kept);
+      return kept;
+    }
+  }
   await writeBlockchainBalanceCache(data);
   return data;
 }

@@ -14,20 +14,20 @@ export const APP_SOURCE = 'استخراج‌شده از اپ پامپی (pampay-
 
 /** نسخه دقیق نصب‌شده — از پیکربندی Native (app.json هنگام بیلد) */
 export const APP_VERSION: string =
-  (Constants.expoConfig?.version as string | undefined) ?? '1.3.0';
+  (Constants.expoConfig?.version as string | undefined) ?? '1.3.1';
 
-/** versionCode اندروید (برای نمایش «نسخه 1.3.0 (4)») */
+/** versionCode اندروید (برای نمایش «نسخه 1.3.1 (5)») */
 export const APP_VERSION_CODE: number =
-  (Constants.expoConfig?.android as { versionCode?: number } | undefined)?.versionCode ?? 4;
+  (Constants.expoConfig?.android as { versionCode?: number } | undefined)?.versionCode ?? 5;
 
 /** نام سازندهٔ برنامه (درخواست کاربر v1.2.0) */
 export const APP_DEVELOPER = 'trade_master65';
 
 /**
- * v1.3.0 — «کاری کن لینک دانلود را کاربر نخواد هربار دستی بزنه در تنظیمات»
- * ریپوی پیش‌فرض چک بروزرسانی — از ابتدا داخل برنامه است؛ کاربر هیچ چیزی در
- * تنظیمات وارد نمی‌کند. با انتشار یک Release جدید روی همین ریپو (تگ v1.3.1 و
- * پیوست‌کردن فایل APK)، پیام «نسخه جدید» خودکار بالای صفحه ظاهر می‌شود.
- * در تنظیمات هم می‌شود ریپوی دیگری برای یک بار جایگزین کرد (override).
+ * v1.3.1 — ریپوی رسمی بروزرسانی (خودِ کاربر آن را ساخته و آدرسش را داده):
+ * https://github.com/Hrgoribachofir851122/asset-management
+ * کاربر چیزی در تنظیمات وارد نمی‌کند؛ با انتشار یک Release جدید روی همین ریپو
+ * (تگ مثل v1.3.2 و پیوست‌کردن فایل APK)، پیام «نسخه جدید» خودکار بالای صفحه
+ * ظاهر می‌شود. چک از طریق پروکسی سرور خودمان انجام می‌شود (از ایران هم جواب می‌دهد).
  */
 export const DEFAULT_GITHUB_REPO = 'Hrgoribachofir851122/asset-management';

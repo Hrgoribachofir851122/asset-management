@@ -2586,11 +2586,13 @@ export default function WalletScreen() {
         );
         return false;
       }
+      // v1.3.1 — همیشه صریح بنویس: خالی‌کردن کادر یک شبکه باید آدرس قبلی‌اش
+      // را واقعاً حذف کند (قبلاً با spreadِ target می‌ماند و پاک نمی‌شد).
       const updated: BlockchainWallet = {
         ...target,
         name,
         networks,
-        ...(Object.keys(cleanPer).length > 0 ? { networkAddresses: cleanPer } : {}),
+        networkAddresses: Object.keys(cleanPer).length > 0 ? cleanPer : undefined,
       };
       bcSaveMutation.mutate(
         bcWallets.map((w) => (w.id === id ? updated : w))

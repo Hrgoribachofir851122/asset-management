@@ -18,7 +18,6 @@ import {
   ScrollView,
   Pressable,
   Image,
-  TextInput,
   Linking,
   ActivityIndicator,
 } from 'react-native';
@@ -44,7 +43,6 @@ import { useApp } from '@/contexts/AppContext';
 import { APP_VERSION, APP_VERSION_CODE, APP_DEVELOPER, DEFAULT_GITHUB_REPO } from '@/constants/appInfo';
 import {
   checkForUpdate,
-  isValidRepoSlug,
   notifyUpdateAvailable,
   type UpdateInfo,
 } from '@/utils/updateChecker';
@@ -105,42 +103,29 @@ const HELP_SECTIONS = [
   },
 ];
 
-/** ── v1.3.0 — کارت بررسی بروزرسانی (بدون نیاز به ورود دستی ریپو) ── */
+/** ── v1.3.1 — کارت بررسی بروزرسانی (ساده‌شده به خواست کاربر) ──
+ * «لینک ریپو و توضیحات را نشون نده — فقط دکمهٔ چک و توضیح اینکه اگه
+ * بروزرسانی بیاد پیغام بالا برنامه نمایش داده میشه همین»
+ * ریپو از قبل داخل برنامه است (DEFAULT_GITHUB_REPO) و هیچ ورودی از کاربر
+ * نمی‌خواهد؛ نتیجهٔ چک هم همین‌جا و هم به شکل بنر بالای صفحه می‌آید.
+ */
 function UpdateCard() {
-  const { settings, updateSettings } = useApp();
-  // ریپو از قبل داخل برنامه است (DEFAULT_GITHUB_REPO)؛ ورودیِ تنظیمات فقط
-  // override اختیاری است — «کاربر نخواد هربار دستی در تنظیمات واردش کند».
-  const savedRepo = (settings.githubRepo ?? '').trim() || DEFAULT_GITHUB_REPO;
-  const [repoInput, setRepoInput] = useState(settings.githubRepo ?? '');
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<UpdateInfo | null>(null);
-  const [savedFlash, setSavedFlash] = useState(false);
-
-  const repoValid = repoInput.trim().length === 0 || isValidRepoSlug(repoInput);
-  const repoChanged = repoInput.trim() !== (settings.githubRepo ?? '');
 
   const check = useCallback(async () => {
-    // اگر ریپوی جدید معتبر نوشته شده، همین حالا ذخیره و همان چک می‌شود؛
-    // ورودی خالی = بازگشت به ریپوی پیش‌فرض داخل برنامه.
-    const typed = repoInput.trim();
-    const repoToCheck = typed && isValidRepoSlug(typed) ? typed : savedRepo;
-    if (repoChanged) {
-      updateSettings({ githubRepo: typed });
-      setSavedFlash(true);
-      setTimeout(() => setSavedFlash(false), 2000);
-    }
     setBusy(true);
     setResult(null);
     try {
-      const info = await checkForUpdate(repoToCheck, APP_VERSION);
+      const info = await checkForUpdate(DEFAULT_GITHUB_REPO, APP_VERSION);
       setResult(info);
-      // v1.3.0 — پیدا شدن نسخهٔ جدید → بنر «نسخه جدید منتشر شد» همان لحظه
-      // بالای صفحهٔ برنامه ظاهر می‌شود (بدون انتظار برای تایمر بعدی).
+      // پیدا شدن نسخهٔ جدید → بنر «نسخه جدید منتشر شد» همان لحظه بالای صفحهٔ
+      // برنامه ظاهر می‌شود (بدون انتظار برای چک خودکار بعدی).
       if (info.available) notifyUpdateAvailable(info);
     } finally {
       setBusy(false);
     }
-  }, [repoChanged, repoInput, savedRepo, updateSettings]);
+  }, []);
 
   const download = (url?: string) => {
     if (url) void Linking.openURL(url);
@@ -156,49 +141,33 @@ function UpdateCard() {
       </View>
 
       <Text style={styles.updateHint}>
-        ریپوی بروزرسانی از قبل داخل برنامه تنظیم شده ({savedRepo}) — فقط دکمهٔ چک را بزنید؛ با
-        انتشار Release جدید در گیتهاب، پیام نسخهٔ جدید همراه توضیحات و دکمهٔ دانلود خودکار بالای
-        صفحهٔ برنامه ظاهر می‌شود. (در صورت نیاز می‌توانید ریپوی دیگری بنویسید — خالی بگذارید =
-        ریپوی پیش‌فرض)
+        اگر بروزرسانی جدیدی منتشر شود، پیام آن همراه توضیحات و دکمهٔ دانلود، خودکار بالای صفحهٔ
+        برنامه نمایش داده می‌شود.
       </Text>
 
-      <View style={styles.updateInputRow}>
-        <TextInput
-          style={[styles.updateInput, repoValid && repoInput.trim() ? styles.updateInputOk : null]}
-          value={repoInput}
-          onChangeText={setRepoInput}
-          placeholder={`پیش‌فرض: ${DEFAULT_GITHUB_REPO}`}
-          placeholderTextColor={colors.dark.textMuted}
-          autoCapitalize="none"
-          autoCorrect={false}
-          testID="update-repo-input"
-        />
-        <Pressable
-          style={[styles.checkBtn, (!repoValid || busy) && styles.checkBtnDisabled]}
-          disabled={!repoValid || busy}
-          onPress={() => void check()}
-          testID="check-update-btn"
-        >
-          {busy ? (
-            <ActivityIndicator size="small" color={colors.dark.background} />
-          ) : (
-            <>
-              <Github size={14} color={colors.dark.background} />
-              <Text style={styles.checkBtnText}>
-                {savedFlash ? 'ذخیره شد ✓' : 'چک بروزرسانی'}
-              </Text>
-            </>
-          )}
-        </Pressable>
-      </View>
+      <Pressable
+        style={[styles.checkBtn, styles.checkBtnFull, busy && styles.checkBtnDisabled]}
+        disabled={busy}
+        onPress={() => void check()}
+        testID="check-update-btn"
+      >
+        {busy ? (
+          <ActivityIndicator size="small" color={colors.dark.background} />
+        ) : (
+          <>
+            <Github size={14} color={colors.dark.background} />
+            <Text style={styles.checkBtnText}>چک بروزرسانی</Text>
+          </>
+        )}
+      </Pressable>
 
       {result && !result.error && !result.available && (
         <View style={styles.resultRow}>
           <CheckCircle2 size={15} color={colors.dark.green} />
           <Text style={styles.resultOk}>
             {result.latestVersion
-              ? `به‌روز هستید — آخرین نسخه روی گیتهاب: ${result.latestVersion}`
-              : 'به‌روز هستید'}
+              ? `برنامه بروز است — آخرین نسخه (${result.latestVersion}) نصب است`
+              : 'برنامه بروز است — آخرین نسخه نصب است'}
           </Text>
         </View>
       )}
@@ -236,18 +205,7 @@ function UpdateCard() {
           <Text style={styles.resultErr}>
             {result.error === 'github-unreachable'
               ? 'دسترسی به گیتهاب برقرار نشد — بعداً تلاش کنید'
-              : result.error === '404'
-                ? `ریپو یا Release پیدا نشد — مطمئن شوید ${savedRepo} در گیتهاب Release دارد`
-                : `خطا: ${result.error}`}
-          </Text>
-        </View>
-      )}
-      {result?.error === 'no-release' && (
-        <View style={styles.resultRow}>
-          <XCircle size={15} color={colors.dark.orange} />
-          <Text style={styles.resultErr}>
-            برای این ریپو هنوز Release نسخه‌سازی شده — در گیتهاب Releases → New release با تگ
-            v1.2.1 بسازید و فایل APK را پیوست کنید
+              : `خطا: ${result.error}`}
           </Text>
         </View>
       )}
@@ -506,33 +464,19 @@ const styles = createThemedStyles(() =>
       color: colors.dark.textMuted,
       textAlign: 'right',
     },
-    updateInputRow: {
-      flexDirection: 'row',
-      gap: 8,
-    },
-    updateInput: {
-      flex: 1,
-      backgroundColor: colors.dark.inputBg,
-      borderWidth: 1,
-      borderColor: colors.dark.border,
-      borderRadius: 10,
-      paddingHorizontal: 12,
-      paddingVertical: 10,
-      fontSize: 12.5,
-      color: colors.dark.text,
-      textAlign: 'left',
-    },
-    updateInputOk: {
-      borderColor: colors.dark.green + '88',
-    },
     checkBtn: {
       flexDirection: 'row',
       alignItems: 'center',
+      justifyContent: 'center',
       gap: 6,
       backgroundColor: colors.dark.accent,
       borderRadius: 10,
       paddingHorizontal: 14,
       paddingVertical: 10,
+    },
+    // v1.3.1 — دکمهٔ چک تمام‌عرض (ورودی ریپو حذف شد)
+    checkBtnFull: {
+      alignSelf: 'stretch',
     },
     checkBtnDisabled: {
       opacity: 0.5,
