@@ -2809,12 +2809,19 @@ export default function WalletScreen() {
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
-      {/* ── هشدار امنیتی: فیلترشکن خاموش ── */}
+      {/* ── هشدار امنیتی: فیلترشکن خاموش ──
+          v1.3.0 — در دو تب «دارایی ریالی و فلزات» و «پیش‌بینی طلا» پیام سبز
+          «این بخش با IP ایران بدون مشکل متصل است» نشان داده می‌شود (منابع
+          داخلی‌اند) + توضیح اینکه دو بخش کیف پول و ارز دیجیتال با IP تحریمی
+          هیچ ترافیکی نمی‌گیرند. در دو تب خودِ کیف/ارز، محتوای تب جایگزین کارت
+          خطای IP می‌شود و بنر نارنجی قدیمی دیگر لازم نیست. ── */}
       <VpnWarningBanner
+        variant={activeMainTab === 'rial' || activeMainTab === 'gold' ? 'safe' : 'exchange'}
         show={
-          hasForeignWallet ||
-          hasBlockchainWallet ||
-          (showAddForm && isForeignExchange(selectedExchange))
+          !ipBlocked &&
+          (hasForeignWallet ||
+            hasBlockchainWallet ||
+            (showAddForm && isForeignExchange(selectedExchange)))
         }
       />
 

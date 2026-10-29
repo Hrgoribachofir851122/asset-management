@@ -41,8 +41,13 @@ import { createThemedStyles } from '@/utils/themeStyles';
 import DropdownPicker from '@/components/DropdownPicker';
 import IpStatusCard from '@/components/IpStatusCard';
 import { useApp } from '@/contexts/AppContext';
-import { APP_VERSION, APP_VERSION_CODE, APP_DEVELOPER } from '@/constants/appInfo';
-import { checkForUpdate, isValidRepoSlug, type UpdateInfo } from '@/utils/updateChecker';
+import { APP_VERSION, APP_VERSION_CODE, APP_DEVELOPER, DEFAULT_GITHUB_REPO } from '@/constants/appInfo';
+import {
+  checkForUpdate,
+  isValidRepoSlug,
+  notifyUpdateAvailable,
+  type UpdateInfo,
+} from '@/utils/updateChecker';
 
 /** گزینه‌های بازه بروزرسانی — عیناً از پامپی (settings-extract/02) */
 const REFRESH_INTERVAL_OPTIONS = [
@@ -90,7 +95,7 @@ const HELP_SECTIONS = [
     id: 'blockchain-wallet',
     title: '⛓ تب کیف پول بلاکچین (فقط خواندنی)',
     content:
-      'مثل داشتن تراست ولتم داخل همین برنامه — بدون هیچ ریسکی:\n\n• فقط آدرس عمومی وارد می‌کنید؛ نه کلید خصوصی نه عبارت بازیابی — برداشت از کیف شما غیرممکن است.\n• منوی کشویی شبکه‌ها: ۵۱ شبکه — همهٔ شبکه‌های EVM (اتریوم، BSC، پالیگان، آربیتروم، بیس، آوالانچ و…) با یک آدرس 0x مشترک + شبکه‌های مستقل: تون (Tonkeeper)، ترون، سولانا، بیت‌کوین، ریپل، فایل‌کوین و… که آدرس اختصاصی خودشان را در کادر همان شبکه وارد می‌کنید.\n• لیست دارایی‌ها: هر ارز با آیکون واقعی خودش؛ نام ارز سمت راست و شبکهٔ آن داخل پرانتز جلوش (همچنین نشان کوچکِ رنگی شبکه روی گوشهٔ آیکون). وسط ردیف: تعداد دارایی و زیرش درصد رشد همان تایم‌فریم؛ سمت چپ: ارزش کل و زیرش سود/زیان دلاری ($ و درصد).\n• Tonkeeper: آدرس UQ/EQ کیف تون را اضافه کنید — موجودی TON و همهٔ جتون‌ها (مثل USDT تون) خوانده می‌شود (سه منبع پشتیبان + تلاش مجدد خودکار).\n• سود/زیان سه‌سطحی با تایم‌فریم‌های امروز/۷/۳۰/۹۰/۱۸۰ روز: کل در بالا، هر کیف یک خط، و هر ارز داخل کیف. دارایی این تب در تب ریالی هم حساب می‌شود.\n• این تب فقط با IP غیرتحریمی کار می‌کند؛ با IP ایران هیچ درخواستی به سرورهای بلاکچین نمی‌رود.',
+      'مثل داشتن تراست ولتم داخل همین برنامه — بدون هیچ ریسکی:\n\n• فقط آدرس عمومی وارد می‌کنید؛ نه کلید خصوصی نه عبارت بازیابی — برداشت از کیف شما غیرممکن است.\n• منوی کشویی شبکه‌ها: ۵۱ شبکه — همهٔ شبکه‌های EVM (اتریوم، BSC، پالیگان، آربیتروم، بیس، آوالانچ و…) با یک آدرس 0x مشترک + شبکه‌های مستقل: تون (Tonkeeper)، ترون، سولانا، بیت‌کوین، ریپل، فایل‌کوین و… که آدرس اختصاصی خودشان را در کادر همان شبکه وارد می‌کنید.\n• لیست دارایی‌ها: هر ارز با آیکون واقعی خودش؛ نام ارز سمت راست و شبکهٔ آن داخل پرانتز جلوش (همچنین نشان کوچکِ رنگی شبکه روی گوشهٔ آیکون). وسط ردیف: تعداد دارایی و زیرش درصد رشد همان تایم‌فریم؛ سمت چپ: ارزش کل و زیرش فقط سود/زیان دلاری همان تایم‌فریم.\n• کپی آدرس: دکمهٔ کپی کنار آدرس کیف — همان 0x آدرسِ مشترک همهٔ شبکه‌های EVM (اتریوم، BSC و…) است؛ آدرس اختصاصی هر شبکهٔ مستقل هم داخل کارت بازشده ردیف کپی خودش را دارد.\n• Tonkeeper: آدرس UQ/EQ کیف تون را اضافه کنید — موجودی TON و همهٔ جتون‌ها (مثل USDT تون) خوانده می‌شود (سه منبع پشتیبان + زنجیرهٔ کامل روی سرور خودمان؛ اگر APIهای عمومی روی IP فیلترشکن محدود شده باشند، سرور جایگزین می‌کند و موجودی می‌آید).\n• سود/زیان سه‌سطحی با تایم‌فریم‌های امروز/۷/۳۰/۹۰/۱۸۰ روز: کل در بالا، هر کیف یک خط، و هر ارز داخل کیف. دارایی این تب در تب ریالی هم حساب می‌شود.\n• این تب فقط با IP غیرتحریمی کار می‌کند؛ با IP ایران هیچ درخواستی به سرورهای بلاکچین نمی‌رود.',
   },
   {
     id: 'ip-vpn',
@@ -100,30 +105,38 @@ const HELP_SECTIONS = [
   },
 ];
 
-/** ── v1.2.0 — کارت بررسی بروزرسانی ── */
+/** ── v1.3.0 — کارت بررسی بروزرسانی (بدون نیاز به ورود دستی ریپو) ── */
 function UpdateCard() {
   const { settings, updateSettings } = useApp();
-  const savedRepo = settings.githubRepo ?? '';
-  const [repoInput, setRepoInput] = useState(savedRepo);
+  // ریپو از قبل داخل برنامه است (DEFAULT_GITHUB_REPO)؛ ورودیِ تنظیمات فقط
+  // override اختیاری است — «کاربر نخواد هربار دستی در تنظیمات واردش کند».
+  const savedRepo = (settings.githubRepo ?? '').trim() || DEFAULT_GITHUB_REPO;
+  const [repoInput, setRepoInput] = useState(settings.githubRepo ?? '');
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<UpdateInfo | null>(null);
   const [savedFlash, setSavedFlash] = useState(false);
 
-  const repoValid = isValidRepoSlug(repoInput);
-  const repoChanged = repoInput.trim() !== savedRepo;
+  const repoValid = repoInput.trim().length === 0 || isValidRepoSlug(repoInput);
+  const repoChanged = repoInput.trim() !== (settings.githubRepo ?? '');
 
   const check = useCallback(async () => {
-    const repo = repoChanged ? repoInput.trim() : savedRepo;
-    if (!isValidRepoSlug(repo)) return;
+    // اگر ریپوی جدید معتبر نوشته شده، همین حالا ذخیره و همان چک می‌شود؛
+    // ورودی خالی = بازگشت به ریپوی پیش‌فرض داخل برنامه.
+    const typed = repoInput.trim();
+    const repoToCheck = typed && isValidRepoSlug(typed) ? typed : savedRepo;
     if (repoChanged) {
-      updateSettings({ githubRepo: repo });
+      updateSettings({ githubRepo: typed });
       setSavedFlash(true);
       setTimeout(() => setSavedFlash(false), 2000);
     }
     setBusy(true);
     setResult(null);
     try {
-      setResult(await checkForUpdate(repo, APP_VERSION));
+      const info = await checkForUpdate(repoToCheck, APP_VERSION);
+      setResult(info);
+      // v1.3.0 — پیدا شدن نسخهٔ جدید → بنر «نسخه جدید منتشر شد» همان لحظه
+      // بالای صفحهٔ برنامه ظاهر می‌شود (بدون انتظار برای تایمر بعدی).
+      if (info.available) notifyUpdateAvailable(info);
     } finally {
       setBusy(false);
     }
@@ -143,9 +156,10 @@ function UpdateCard() {
       </View>
 
       <Text style={styles.updateHint}>
-        ریپوی گیتهاب خود را وارد کنید (به شکل owner/repo) و دکمهٔ چک را بزنید. هر وقت در گیتهاب
-        یک Release جدید با فایل APK منتشر کنید، پیام نسخهٔ جدید همراه توضیحات و دکمهٔ دانلود
-        بالای صفحهٔ برنامه ظاهر می‌شود.
+        ریپوی بروزرسانی از قبل داخل برنامه تنظیم شده ({savedRepo}) — فقط دکمهٔ چک را بزنید؛ با
+        انتشار Release جدید در گیتهاب، پیام نسخهٔ جدید همراه توضیحات و دکمهٔ دانلود خودکار بالای
+        صفحهٔ برنامه ظاهر می‌شود. (در صورت نیاز می‌توانید ریپوی دیگری بنویسید — خالی بگذارید =
+        ریپوی پیش‌فرض)
       </Text>
 
       <View style={styles.updateInputRow}>
@@ -153,7 +167,7 @@ function UpdateCard() {
           style={[styles.updateInput, repoValid && repoInput.trim() ? styles.updateInputOk : null]}
           value={repoInput}
           onChangeText={setRepoInput}
-          placeholder="مثلاً myuser/asset-management"
+          placeholder={`پیش‌فرض: ${DEFAULT_GITHUB_REPO}`}
           placeholderTextColor={colors.dark.textMuted}
           autoCapitalize="none"
           autoCorrect={false}
@@ -222,7 +236,9 @@ function UpdateCard() {
           <Text style={styles.resultErr}>
             {result.error === 'github-unreachable'
               ? 'دسترسی به گیتهاب برقرار نشد — بعداً تلاش کنید'
-              : `خطا: ${result.error}`}
+              : result.error === '404'
+                ? `ریپو یا Release پیدا نشد — مطمئن شوید ${savedRepo} در گیتهاب Release دارد`
+                : `خطا: ${result.error}`}
           </Text>
         </View>
       )}
