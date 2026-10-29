@@ -30,4 +30,4 @@ export const APP_DEVELOPER = 'trade_master65';
  * پیوست‌کردن فایل APK)، پیام «نسخه جدید» خودکار بالای صفحه ظاهر می‌شود.
  * در تنظیمات هم می‌شود ریپوی دیگری برای یک بار جایگزین کرد (override).
  */
-export const DEFAULT_GITHUB_REPO = 'trade_master65/asset-management';
+export const DEFAULT_GITHUB_REPO = 'Hrgoribachofir851122/asset-management';
