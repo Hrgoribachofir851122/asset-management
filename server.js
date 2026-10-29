@@ -433,7 +433,9 @@ async function handleGithubRelease(req, res, query) {
 // → { byId: { bitcoin: url, … }, bySymbol: { BTC: url, … } }
 // اپ برای «آیکون واقعی هر ارز» در لیست دارایی کیف پول بلاکچین استفاده می‌کند.
 // کش ۱ ساعته per-query؛ خطا → byId/bySymbol خالی (اپ آواتار حرفی نشان می‌دهد).
-const cgIconCache = new Map(); // key → { at, payload }
+const cgIconCache = new Map(); // key → { at, payload, short }
+const CG_ICON_TTL = 3_600_000; // جواب سالم: ۱ ساعت
+const CG_ICON_MISS_TTL = 45_000; // v1.7.0 — جواب خالی/خطا فقط ۴۵ ثانیه (۴۲۹ نباید یک ساعت بچسبد!)
 
 async function handleCgIcons(res, query) {
   const ids = String(query.get('ids') || '').toLowerCase();
@@ -441,7 +443,10 @@ async function handleCgIcons(res, query) {
   const key = `${ids}|${symbols}`;
   if (!ids && !symbols) return sendJson(res, 200, { byId: {}, bySymbol: {} });
   const hit = cgIconCache.get(key);
-  if (hit && Date.now() - hit.at < 3_600_000) return sendJson(res, 200, hit.payload);
+  if (hit) {
+    const ttl = hit.short ? CG_ICON_MISS_TTL : CG_ICON_TTL;
+    if (Date.now() - hit.at < ttl) return sendJson(res, 200, hit.payload);
+  }
 
   try {
     const parts = ['vs_currency=usd'];
@@ -472,10 +477,71 @@ async function handleCgIcons(res, query) {
       }
     }
     const payload = { byId, bySymbol, ts: Date.now() };
-    cgIconCache.set(key, { at: Date.now(), payload });
+    // v1.7.0 — جواب خالی (۴۲۹/سمبول ناشناخته) کوتاه‌مدت کش می‌شود تا تلاش بعدی زودتر برسد
+    const isEmpty = Object.keys(byId).length === 0 && Object.keys(bySymbol).length === 0;
+    cgIconCache.set(key, { at: Date.now(), payload, short: isEmpty });
     return sendJson(res, 200, payload);
   } catch (e) {
-    return sendJson(res, 200, { byId: {}, bySymbol: {}, error: e.message, ts: Date.now() });
+    // v1.7.0 — خطا هم دیگر یک ساعت کش نمی‌شود (فقط ۴۵ ثانیه)
+    const payload = { byId: {}, bySymbol: {}, error: e.message, ts: Date.now() };
+    cgIconCache.set(key, { at: Date.now(), payload, short: true });
+    return sendJson(res, 200, payload);
+  }
+}
+
+// ─── v1.7.0 — پروکسی بایت‌های آیکون (fallback وقتی CDN کویین‌گکو روی نتِ
+// گوشی باز نمی‌شود) ─────────────────────────────────────────────────────
+// GET /cg-icon?url=https://coin-images.coingecko.com/coins/images/1/large/bitcoin.png
+// فقط دو هُست مجاز؛ کش حافظه ۶ ساعته (بایت base64)؛ از ایران هم جواب می‌دهد.
+const CG_ICON_HOSTS = new Set(['coin-images.coingecko.com', 'assets.coingecko.com', 'www.coingecko.com']);
+const cgIconBytesCache = new Map(); // url → { at, b64, mime }
+const CG_ICON_BYTES_TTL = 6 * 3_600_000;
+
+async function handleCgIconBytes(res, query) {
+  const target = String(query.get('url') || '');
+  let parsed;
+  try {
+    parsed = new URL(target);
+  } catch {
+    return sendJson(res, 400, { error: 'bad-url' });
+  }
+  if (parsed.protocol !== 'https:' || !CG_ICON_HOSTS.has(parsed.hostname)) {
+    return sendJson(res, 403, { error: 'host-not-allowed' });
+  }
+  const hit = cgIconBytesCache.get(target);
+  if (hit && Date.now() - hit.at < CG_ICON_BYTES_TTL) {
+    const buf = Buffer.from(hit.b64, 'base64');
+    res.writeHead(200, {
+      'Content-Type': hit.mime,
+      'Content-Length': buf.length,
+      'Cache-Control': 'public, max-age=21600',
+      'Access-Control-Allow-Origin': '*',
+    });
+    return res.end(buf);
+  }
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 12_000);
+    let r;
+    try {
+      r = await fetch(target, { signal: ctrl.signal, headers: { 'User-Agent': 'asset-management-server' } });
+    } finally {
+      clearTimeout(timer);
+    }
+    if (!r.ok) throw new Error(`icon HTTP ${r.status}`);
+    const mime = r.headers.get('content-type') || 'image/png';
+    const buf = Buffer.from(await r.arrayBuffer());
+    if (buf.length > 512 * 1024) throw new Error('icon too large');
+    cgIconBytesCache.set(target, { at: Date.now(), b64: buf.toString('base64'), mime });
+    res.writeHead(200, {
+      'Content-Type': mime,
+      'Content-Length': buf.length,
+      'Cache-Control': 'public, max-age=21600',
+      'Access-Control-Allow-Origin': '*',
+    });
+    return res.end(buf);
+  } catch (e) {
+    return sendJson(res, 502, { error: 'icon-fetch-failed', message: e.message });
   }
 }
 
@@ -723,6 +789,8 @@ const server = http.createServer(async (req, res) => {
   if (urlPath === '/ip-check') return handleIpCheck(req, res);
   if (urlPath === '/github-release') return handleGithubRelease(req, res, new URL(req.url, 'http://x').searchParams);
   if (urlPath === '/cg-icons') return handleCgIcons(res, new URL(req.url, 'http://x').searchParams);
+  // v1.7.0 — پروکسی بایت آیکون (fallback تصویر وقتی CDN روی نت گوشی باز نیست)
+  if (urlPath === '/cg-icon') return handleCgIconBytes(res, new URL(req.url, 'http://x').searchParams);
   // v1.3.0 — پروکسی خواندن بلاکچین (تون / فایل‌کوین)
   if (urlPath === '/bc/ton') return handleBcTon(res, new URL(req.url, 'http://x').searchParams);
   if (urlPath === '/bc/filecoin') return handleBcFil(res, new URL(req.url, 'http://x').searchParams);
@@ -733,7 +801,7 @@ const server = http.createServer(async (req, res) => {
       status: 'ok',
       service: 'asset-management web + price proxy',
       web: hasDist ? 'ready' : 'dist missing (run: npx expo export --platform web)',
-      endpoints: ['/nobitex/usdt-toman', '/alanchand/usdt-toman', '/ip-check', '/github-release', '/cg-icons', '/bc/ton', '/bc/filecoin'],
+      endpoints: ['/nobitex/usdt-toman', '/alanchand/usdt-toman', '/ip-check', '/github-release', '/cg-icons', '/cg-icon', '/bc/ton', '/bc/filecoin'],
     });
   }
 

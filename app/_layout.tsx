@@ -18,7 +18,7 @@ import { View, StyleSheet, AppState, AppStateStatus } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { QueryClient, QueryClientProvider, focusManager } from '@tanstack/react-query';
 import colors, { type ThemeMode } from '@/constants/colors';
 import { AppProvider, useApp } from '@/contexts/AppContext';
@@ -54,14 +54,21 @@ function RootNavigator() {
   const { themeMode } = useApp();
   const mode: ThemeMode = themeMode ?? 'dark';
   const palette = mode === 'light' ? colors.light : colors.dark;
+  // v1.7.0 — «کادر پیغام آپدیت خیلی بالاست و زیر مودال‌های خود گوشی می‌رود»:
+  // ریشهٔ اپ هیچ padding امنی نداشت، پس بنر بروزرسانی (و بالای همهٔ صفحه‌ها)
+  // زیر نوار وضعیت/ناچ گوشی می‌افتاد. حالا کل ریشه با insets.top زیر نوار
+  // وضعیت فشار داده می‌شود — بنر دقیقاً «داخل» قاب برنامه و زیر نوار گوشی
+  // ظاهر می‌شود و دیگر بریده/پوشیده نمی‌شود.
+  const insets = useSafeAreaInsets();
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       <StatusBar
         style={mode === 'light' ? 'dark' : 'light'}
         backgroundColor={palette.statusBar}
       />
-      {/* v1.2.0 — پیام «نسخه جدید منتشر شد» بالای همهٔ صفحات (changelog + دانلود) */}
+      {/* v1.2.0 — پیام «نسخه جدید منتشر شد» بالای همهٔ صفحات (changelog + دانلود)
+          v1.7.0 — با paddingTop امن، داخل قاب برنامه و زیر نوار وضعیت گوشی */}
       <UpdateBanner />
       {/* v1.2.0 — با اضافه‌شدن بنر بالای استک، Stack باید خودش flex:1 بگیرد */}
       <View style={styles.stackWrap}>

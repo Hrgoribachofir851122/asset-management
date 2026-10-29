@@ -2370,26 +2370,83 @@ export async function ensureCgIds(tokens: BlockchainTokenBalance[]): Promise<voi
 // CoinGecko fallback) — both cached, both best-effort (never throw).
 // ---------------------------------------------------------------------------
 
-/** آیکون‌های واقعی ارزها برای ردیف‌های صرافی — همان منبع بخش کیف پول. */
+/**
+ * v1.7.0 — MICRO-BATCHER برای آیکون‌های صرافی‌ها.
+ * علت باگ «آیکون واقعی ارزها در صرافی‌ها نشان داده نمی‌شود»: هر ردیف یک
+ * useQuery جدا دارد و هر کدام یک درخواست تک‌سمبولی می‌زد — ده‌ها درخواست
+ * همزمان → CoinGecko پشت سرور Rate-limit (429) می‌دهد → bySymbol خالی →
+ * نشان حرفی. حالا همهٔ درخواست‌های همان لحظه (یک فریم رندر) در یک پنجرهٔ
+ * ۲۵۰ms جمع شده و با «یک» درخواست دسته‌ای (تا ۸۰ سمبول) برمی‌گردند.
+ * سمبول‌های بدون جواب ۵ دقیقه کش منفی می‌شوند تا رندرهای بعدی فشار نیاورند.
+ */
+
+const ICON_BATCH_WINDOW_MS = 250;
+const ICON_NEGATIVE_TTL = 5 * 60_000;
+const iconNegativeCache = new Map<string, number>(); // sym → failedAt
+
+type IconQueueItem = { sym: string; resolve: (url?: string) => void };
+let iconBatchQueue: IconQueueItem[] = [];
+let iconBatchTimer: ReturnType<typeof setTimeout> | null = null;
+
+function queueIconRequest(sym: string): Promise<string | undefined> {
+  return new Promise((resolve) => {
+    iconBatchQueue.push({ sym, resolve });
+    if (!iconBatchTimer) {
+      iconBatchTimer = setTimeout(() => {
+        iconBatchTimer = null;
+        void flushIconBatch();
+      }, ICON_BATCH_WINDOW_MS);
+    }
+  });
+}
+
+async function flushIconBatch(): Promise<void> {
+  const batch = iconBatchQueue;
+  iconBatchQueue = [];
+  if (batch.length === 0) return;
+  const syms = [...new Set(batch.map((b) => b.sym))];
+  let bySymbol: Record<string, string> = {};
+  try {
+    const res = await fetchIconMaps([], syms);
+    bySymbol = res.bySymbol ?? {};
+  } catch {}
+  for (const [sym, url] of Object.entries(bySymbol)) {
+    if (url) {
+      tokenIconCache.set(sym, url);
+      iconNegativeCache.delete(sym);
+    }
+  }
+  for (const item of batch) {
+    const url = bySymbol[item.sym];
+    if (!url) iconNegativeCache.set(item.sym, Date.now());
+    item.resolve(url);
+  }
+}
+
+/** آیکون‌های واقعی ارزها برای ردیف‌های صرافی — همان منبع بخش کیف پول.
+ *  v1.7.0 — دسته‌ای: صدها ردیف همزمان = فقط یک درخواست به سرور. */
 export async function getAssetIconUrls(
   symbols: string[]
 ): Promise<Record<string, string>> {
   const out: Record<string, string> = {};
-  const need = new Set<string>();
+  const pending: Promise<void>[] = [];
   for (const s of symbols) {
     const sym = (s ?? '').trim().toUpperCase();
     if (!sym) continue;
     const cached = tokenIconCache.get(sym);
-    if (cached) out[sym] = cached;
-    else need.add(sym);
-  }
-  if (need.size > 0) {
-    const { bySymbol } = await fetchIconMaps([], [...need]);
-    for (const [sym, url] of Object.entries(bySymbol)) {
-      if (url && !tokenIconCache.has(sym)) tokenIconCache.set(sym, url);
-      if (url) out[sym] = url;
+    if (cached) {
+      out[sym] = cached;
+      continue;
     }
+    const negAt = iconNegativeCache.get(sym);
+    if (negAt && Date.now() - negAt < ICON_NEGATIVE_TTL) continue; // miss اخیر — دوباره اذیت نکن
+    pending.push(
+      queueIconRequest(sym).then((url) => {
+        if (url) out[sym] = url;
+      })
+    );
   }
+  await Promise.all(pending);
   return out;
 }
 
