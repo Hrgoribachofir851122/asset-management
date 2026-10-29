@@ -160,6 +160,18 @@ function extractPrices(data: {
 
 let memoryCache: { at: number; prices: IranMarketPrices } | null = null;
 
+/**
+ * v1.2.0 — «دکمهٔ رفرش یک بار کار می‌کند دفعهٔ دوم نه»: علت، همین کشِ ۶۰
+ * ثانیه‌ای حافظه بود — invalidate دومِ react-query دوباره همین تابع را صدا
+ * می‌زد و تابع بلافاصله مقدار کش‌شده را برمی‌گرداند (بدون هیچ درخواست شبکه).
+ * دکمهٔ رفرش UI قبل از invalidate این کش را خالی می‌کند تا همیشه یک دریافت
+ * واقعی انجام شود.
+ */
+export function clearIranMarketMemoryCache(): void {
+  memoryCache = null;
+}
+
+
 async function fetchWithTimeout(url: string, timeoutMs = 12000): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);

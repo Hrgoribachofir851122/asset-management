@@ -57,6 +57,8 @@ import { fetchForeignExchangeBalance } from '@/utils/foreignExchangeBalances';
 import { fetchForeignPeriodPnl } from '@/utils/foreignExchangePnl';
 import { exchangeNow, markClockStale } from '@/utils/exchangeClock';
 import LocalAssetsSection from '@/components/LocalAssetsSection';
+// v1.2.0 — کارت پیام IP تحریمی برای دو تب «کیف پول بلاکچین» و «ارز دیجیتال»
+import IpBlockedNotice from '@/components/IpBlockedNotice';
 import GoldPredictionSection from '@/components/GoldPredictionSection';
 import BlockchainWalletsSection from '@/components/BlockchainWalletsSection';
 import {
@@ -2161,12 +2163,14 @@ export default function WalletScreen() {
     [wallets]
   );
 
+  // v1.2.0 — poll همیشه فعال (قبلاً فقط با صرافی خارجی متصل):
+  // دو تب «کیف پول بلاکچین» و «ارز دیجیتال» باید حتی بدون هیچ کیف/صرافیِ
+  // متصل هم وضعیت IP را بدانند تا با IP ایران بلافاصله غیرفعال شوند.
   useEffect(() => {
-    if (!hasForeignWallet) return;
     void recheckVpn();
-    const timer = setInterval(() => void recheckVpn(), 60_000);
+    const timer = setInterval(() => void recheckVpn(), 30_000);
     return () => clearInterval(timer);
-  }, [hasForeignWallet, recheckVpn]);
+  }, [recheckVpn]);
 
   // When the VPN comes back ON (status flips to 'vpn'), every foreign
   // balance query is invalidated so the wallets refresh themselves without a
@@ -2193,6 +2197,9 @@ export default function WalletScreen() {
   // cached snapshot stays visible, but NO request leaves the phone). The
   // queryFn itself double-guards via assertNotIranFor().
   const foreignBlocked = vpnStatus === 'iran' && hasForeignWallet;
+  // v1.2.0 — گیت سخت IP تحریمی: کل دو تب «کیف پول بلاکچین» و «ارز دیجیتال»
+  // (حتی صرافی‌های ایرانی) با IP ایران/تحریمی غیرفعال می‌شوند — امنیت دارایی.
+  const ipBlocked = vpnStatus === 'iran';
 
   // v1.4.3 — load the persisted balance snapshots BEFORE the queries mount so
   // the whole portfolio (all exchanges + totals) appears INSTANTLY on screen
@@ -2226,14 +2233,20 @@ export default function WalletScreen() {
       ? wallets.map((w, idx) => ({
           queryKey: ['exchange-balance', w.id],
           queryFn: async (): Promise<ExchangeBalanceData> => {
+            // v1.2.0 — گارد سخت داخل fetch: با IP تحریمی حتی اگر react-query
+            // به هر دلیلی queryFn را صدا بزند، هیچ بایتی به صرافی نمی‌رسد.
+            if (ipBlocked || (await checkVpnStatus()) === 'iran') {
+              throw new Error('IRAN_IP_BLOCKED_EXCHANGE');
+            }
             // v1.4.9 — STAGGER: entering the wallet screen used to fire every
             // exchange's balance fetch (plus the PnL section) at the SAME
             // instant — dozens of requests through one VPN tunnel, the #1
-            // cause of «بایننس یکی در میان» cold-start failures. A 300ms
-            // offset per wallet smooths the burst; old data stays visible
-            // while refetching, so the delay is invisible to the user.
+            // cause of «بایننس یکی در میان» cold-start failures. An offset
+            // per wallet smooths the burst; old data stays visible while
+            // refetching, so the delay is invisible to the user.
+            // v1.2.0 — 300ms → 150ms («موجودی سریع‌تر خوانده شود»)
             if (idx > 0) {
-              await new Promise((r) => setTimeout(r, Math.min(idx, 8) * 300));
+              await new Promise((r) => setTimeout(r, Math.min(idx, 8) * 150));
             }
             const fresh = await fetchExchangeBalance(w);
             await writeBalanceCache(w.id, fresh);
@@ -2241,6 +2254,8 @@ export default function WalletScreen() {
           },
           initialData: balanceCaches[w.id] ?? undefined,
           initialDataUpdatedAt: balanceCaches[w.id]?.lastUpdated,
+          // v1.2.0 — با IP تحریمی کوئری‌های صرافی کلا غیرفعال‌اند (بدون هیچ fetch)
+          enabled: !ipBlocked,
           refetchInterval: foreignBlocked && isForeignExchange(w.exchangeId) ? false : refreshMs,
           refetchOnMount: foreignBlocked && isForeignExchange(w.exchangeId) ? false : 'always',
           staleTime: 30_000,
@@ -2325,8 +2340,14 @@ export default function WalletScreen() {
           queryKey: ['blockchain-balance', w.id],
           queryFn: async (): Promise<BlockchainWalletData> => {
             // same stagger as exchange balances — smooths the cold-start burst
+            // v1.2.0 — 250ms → 120ms (خواندن سریع‌تر موجودی در تب ریالی)
             if (idx > 0) {
-              await new Promise((r) => setTimeout(r, Math.min(idx, 6) * 250));
+              await new Promise((r) => setTimeout(r, Math.min(idx, 6) * 120));
+            }
+            // v1.1.0 — دوباره‌چک داخل خودِ fetch: با IP تحریمی هیچ بایتی از
+            // گوشی خارج نمی‌شود (حتی اگر react-query به هر دلیلی صدا بزند).
+            if ((await checkVpnStatus()) === 'iran') {
+              throw new Error('IRAN_IP_BLOCKED_BC');
             }
             return fetchBlockchainWalletData(w);
           },
@@ -2471,6 +2492,17 @@ export default function WalletScreen() {
     async (id: string, force: boolean): Promise<void> => {
       const w = bcWalletsRef.current.find((x) => x.id === id);
       if (!w) return;
+      // v1.1.0 — «با IP ایران داده به این بخش‌ها ارسال نشه»: حتی اکشن دستی هم
+      // وقتی خروجی ترافیک IP تحریمی است، هیچ درخواستی نمی‌فرستد — فقط پیغام.
+      const ipStatus = await checkVpnStatus();
+      if (ipStatus === 'iran') {
+        setBcRefreshToast(
+          'فیلترشکن خاموش است — برای دریافت موجودی کیف پول بلاکچین، فیلترشکن را روشن کنید'
+        );
+        if (bcRefreshToastTimer.current) clearTimeout(bcRefreshToastTimer.current);
+        bcRefreshToastTimer.current = setTimeout(() => setBcRefreshToast(null), 4000);
+        return;
+      }
       setBcManualRefresh((m) => ({ ...m, [id]: true }));
       try {
         const data = await fetchBlockchainWalletData(w, { force });
@@ -2747,12 +2779,24 @@ export default function WalletScreen() {
   );
 
   const handleRefreshAll = useCallback(() => {
+    // v1.2.0 — با IP تحریمی رفرشِ بخش صرافی‌ها هیچ درخواستی نمی‌زند (فقط پیغام)
+    if (ipBlocked) {
+      void checkVpnStatus(true).then((s) => {
+        if (s === 'iran') {
+          ThemedAlert.alert(
+            'IP تحریمی — رفرش صرافی‌ها غیرفعال است',
+            'فیلترشکن خاموش است و IP خروجی شما ایران است. برای امنیت دارایی، هیچ درخواستی به صرافی‌ها فرستاده نمی‌شود؛ فیلترشکن را روشن کنید و دوباره تلاش کنید.'
+          );
+        }
+      });
+      return;
+    }
     wallets.forEach((w) => {
       queryClient.invalidateQueries({ queryKey: ['exchange-balance', w.id] });
     });
     queryClient.invalidateQueries({ queryKey: ['usdt-toman-price'] });
     queryClient.invalidateQueries({ queryKey: ['iran-market-prices'] });
-  }, [wallets]);
+  }, [wallets, ipBlocked]);
 
   // هشدار فیلترشکن فقط وقتی معنی دارد که صرافی خارجی متصل است (یا در حال
   // افزودن آن هستیم) — صرافی‌های ایرانی با IP ایران مشکلی ندارند.
@@ -2823,6 +2867,15 @@ export default function WalletScreen() {
       </View>
 
       {activeMainTab === 'crypto' && (
+      ipBlocked ? (
+        /* v1.2.0 — با IP تحریمی کل محتوای این تب (مجموع + صرافی‌ها + فرم)
+           جای خود را به کارت پیام IP می‌دهد؛ هیچ درخواستی فعال نیست. */
+        <IpBlockedNotice
+          section="crypto"
+          checking={vpnChecking}
+          onRecheck={() => void recheckVpn(true)}
+        />
+      ) : (
       <>
       {/* ── کارت مجموع دارایی‌ها ── */}
           <View style={styles.portfolioCard}>
@@ -2907,6 +2960,7 @@ export default function WalletScreen() {
               <TotalPnlPeriodSection
                 wallets={wallets}
                 foreignBlocked={foreignBlocked}
+                ipBlocked={ipBlocked}
               />
             )}
           </View>
@@ -3084,6 +3138,7 @@ export default function WalletScreen() {
         </Pressable>
       )}
       </>
+      )
       )}
 
       {/* ── تب ۲: دارایی ریالی و فلزات (ریال + طلا + نقره + سکه + ارز + کیف بلاکچین) ── */}
@@ -3929,9 +3984,12 @@ const PERIOD_PNL_EXCHANGES: ReadonlySet<string> = new Set([
 function TotalPnlPeriodSection({
   wallets,
   foreignBlocked,
+  ipBlocked,
 }: {
   wallets: ExchangeWallet[];
   foreignBlocked: boolean;
+  /** v1.2.0 — گیت سخت IP تحریمی: کل PnL صرافی‌ها غیرفعال */
+  ipBlocked?: boolean;
 }) {
   const [period, setPeriod] = useState<PnlPeriodDays>(30);
 
@@ -3953,7 +4011,8 @@ function TotalPnlPeriodSection({
       retry: 2,
       retryDelay: (attempt: number) => 1200 * (attempt + 1),
       // Same Iran hard gate: foreign exchange PnL endpoints stay untouched.
-      enabled: !(foreignBlocked && isForeignExchange(w.exchangeId)),
+      // v1.2.0 — با IP تحریمی کل PnL صرافی‌ها (حتی ایرانی‌ها) غیرفعال.
+      enabled: !ipBlocked && !(foreignBlocked && isForeignExchange(w.exchangeId)),
     })),
   });
 

@@ -117,6 +117,8 @@ export interface BlockchainTokenBalance {
   binancePair?: string;
   /** CoinGecko id (fallback price/history source). */
   coingeckoId?: string;
+  /** v1.2.0 — URL آیکون واقعی ارز (CoinGecko assets)؛ خالی = آواتار حرفی. */
+  icon?: string;
   /** v1.4.17 — which network this row was read from (multi-network wallets). */
   network?: BlockchainNetwork;
 }

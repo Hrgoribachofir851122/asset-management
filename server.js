@@ -370,7 +370,116 @@ async function handleIpCheck(req, res) {
   }
 }
 
-// ─── HTTP server ────────────────────────────────────────────────────────
+// ─── v1.2.0 — پروکسی GitHub Releases (چک بروزرسانی) ─────────────────────
+// GET /github-release?repo=owner/name → جدیدترین Release (tag/body/apk).
+// api.github.com از ایران ناپایدار است؛ سرور ما (غیرتحریمی) می‌خواند و
+// نتیجه را با CORS باز برمی‌گرداند. کش ۹۰ ثانیه per-repo.
+const ghCache = new Map(); // repo → { at, payload }
+
+async function handleGithubRelease(req, res, query) {
+  const repo = String(query.get('repo') || '').trim();
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) {
+    return sendJson(res, 200, { error: 'bad-repo', ts: Date.now() });
+  }
+  const hit = ghCache.get(repo);
+  if (hit && Date.now() - hit.at < 90_000) return sendJson(res, 200, hit.payload);
+
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 10_000);
+    let r;
+    try {
+      r = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
+        signal: ctrl.signal,
+        headers: {
+          Accept: 'application/vnd.github+json',
+          'User-Agent': 'asset-management-server',
+        },
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+    if (r.status === 404) {
+      // ریپو هست ولی هیچ Release‌ای ندارد
+      const payload = { error: 'no-release', ts: Date.now() };
+      ghCache.set(repo, { at: Date.now(), payload });
+      return sendJson(res, 200, payload);
+    }
+    if (!r.ok) throw new Error(`GitHub HTTP ${r.status}`);
+    const rel = await r.json();
+    const payload = {
+      tag_name: rel.tag_name ?? '',
+      name: rel.name ?? '',
+      body: typeof rel.body === 'string' ? rel.body : '',
+      html_url: rel.html_url ?? '',
+      assets: (Array.isArray(rel.assets) ? rel.assets : []).map((a) => ({
+        name: a.name ?? '',
+        browser_download_url: a.browser_download_url ?? '',
+      })),
+      ts: Date.now(),
+    };
+    ghCache.set(repo, { at: Date.now(), payload });
+    return sendJson(res, 200, payload);
+  } catch (e) {
+    // خطای موقت → آخرین کش موفق (تا ۱ ساعت) بهتر از هیچ است
+    const stale = ghCache.get(repo);
+    if (stale && Date.now() - stale.at < 3_600_000) return sendJson(res, 200, stale.payload);
+    return sendJson(res, 200, { error: 'github-unreachable', message: e.message, ts: Date.now() });
+  }
+}
+
+// ─── v1.2.0 — آیکون ارزها از CoinGecko (پروکسی) ─────────────────────────
+// GET /cg-icons?ids=bitcoin,ethereum&symbols=btc,eth
+// → { byId: { bitcoin: url, … }, bySymbol: { BTC: url, … } }
+// اپ برای «آیکون واقعی هر ارز» در لیست دارایی کیف پول بلاکچین استفاده می‌کند.
+// کش ۱ ساعته per-query؛ خطا → byId/bySymbol خالی (اپ آواتار حرفی نشان می‌دهد).
+const cgIconCache = new Map(); // key → { at, payload }
+
+async function handleCgIcons(res, query) {
+  const ids = String(query.get('ids') || '').toLowerCase();
+  const symbols = String(query.get('symbols') || '').toUpperCase();
+  const key = `${ids}|${symbols}`;
+  if (!ids && !symbols) return sendJson(res, 200, { byId: {}, bySymbol: {} });
+  const hit = cgIconCache.get(key);
+  if (hit && Date.now() - hit.at < 3_600_000) return sendJson(res, 200, hit.payload);
+
+  try {
+    const parts = ['vs_currency=usd'];
+    if (ids) parts.push(`ids=${encodeURIComponent(ids)}`);
+    if (symbols) parts.push(`symbols=${encodeURIComponent(symbols.toLowerCase())}`);
+    parts.push('per_page=250');
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 15_000);
+    let r;
+    try {
+      r = await fetch(`https://api.coingecko.com/api/v3/coins/markets?${parts.join('&')}`, {
+        signal: ctrl.signal,
+        headers: { Accept: 'application/json', 'User-Agent': 'asset-management-server' },
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+    if (!r.ok) throw new Error(`CG HTTP ${r.status}`);
+    const rows = await r.json();
+    const byId = {};
+    const bySymbol = {};
+    for (const c of Array.isArray(rows) ? rows : []) {
+      if (typeof c?.id === 'string' && typeof c?.image === 'string') {
+        byId[c.id] = c.image;
+      }
+      if (typeof c?.symbol === 'string' && typeof c?.image === 'string') {
+        bySymbol[c.symbol.toUpperCase()] = c.image;
+      }
+    }
+    const payload = { byId, bySymbol, ts: Date.now() };
+    cgIconCache.set(key, { at: Date.now(), payload });
+    return sendJson(res, 200, payload);
+  } catch (e) {
+    return sendJson(res, 200, { byId: {}, bySymbol: {}, error: e.message, ts: Date.now() });
+  }
+}
+
+
 const server = http.createServer(async (req, res) => {
   const urlPath = (req.url || '/').split('?')[0].split('#')[0];
 
@@ -390,6 +499,8 @@ const server = http.createServer(async (req, res) => {
   if (urlPath === '/nobitex/usdt-toman') return handleNobitex(res);
   if (urlPath === '/alanchand/usdt-toman') return handleAlanchand(res);
   if (urlPath === '/ip-check') return handleIpCheck(req, res);
+  if (urlPath === '/github-release') return handleGithubRelease(req, res, new URL(req.url, 'http://x').searchParams);
+  if (urlPath === '/cg-icons') return handleCgIcons(res, new URL(req.url, 'http://x').searchParams);
 
   if (urlPath === '/health' || urlPath === '/api/health') {
     const hasDist = fs.existsSync(path.join(DIST, 'index.html'));
@@ -397,7 +508,7 @@ const server = http.createServer(async (req, res) => {
       status: 'ok',
       service: 'asset-management web + price proxy',
       web: hasDist ? 'ready' : 'dist missing (run: npx expo export --platform web)',
-      endpoints: ['/nobitex/usdt-toman', '/alanchand/usdt-toman', '/ip-check'],
+      endpoints: ['/nobitex/usdt-toman', '/alanchand/usdt-toman', '/ip-check', '/github-release', '/cg-icons'],
     });
   }
 

@@ -1,41 +1,48 @@
 /**
  * app/(tabs)/settings/index.tsx — تنظیمات اپ مستقل «مدیریت دارایی»
  *
- * Rebuilt for the standalone app from the original Pampi settings extracts
- * (docs/settings-extract/): only the sections relevant to Asset Management:
- *
- *   ⏱️ «تنظیمات بروزرسانی»  — بازه بروزرسانی خودکار (extract 01 + 02)
- *   🌙 «ظاهر برنامه»        — تم روشن/تیره                       (extract 03)
- *   ❓ «راهنما»             — سه راهنمای بخش دارایی               (extract 04)
- *   ℹ️ «درباره»             — نام/نسخه/توضیح اپ مستقل
- *
- * Styling follows the same conventions as the wallet screens: live
- * colors.dark.* palette + createThemedStyles + right-aligned Persian text.
+ * v1.2.0 — تغییرات:
+ *   • نسخهٔ برنامه دیگر هاردکد نیست (expo-constants → نسخهٔ واقعی نصب‌شده)
+ *   • کارت «بررسی بروزرسانی»: ریپوی GitHub + دکمهٔ چک + نمایش changelog
+ *     و دانلود مستقیم APK از Releases (پروکسی سرور — از ایران هم کار می‌کند)
+ *   • نام سازندهٔ برنامه: trade_master65
+ *   • راهنما: توضیح تب ارز دیجیتال، پیش‌بینی طلا، دارایی ریالی/فلزات،
+ *     کیف پول بلاکچین + بخش کامل «IP و فیلترشکن» (ایران / فیلترشکن روشن)
  */
 
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   Pressable,
+  Image,
+  TextInput,
+  Linking,
+  ActivityIndicator,
 } from 'react-native';
 import {
   ChevronDown,
   ChevronUp,
-  Clock,
   HelpCircle,
   Info,
   Moon,
   RefreshCw,
   Sun,
+  Download,
+  User,
+  CheckCircle2,
+  XCircle,
+  Github,
 } from 'lucide-react-native';
 import colors from '@/constants/colors';
 import { createThemedStyles } from '@/utils/themeStyles';
 import DropdownPicker from '@/components/DropdownPicker';
+import IpStatusCard from '@/components/IpStatusCard';
 import { useApp } from '@/contexts/AppContext';
-import { APP_VERSION } from '@/constants/appInfo';
+import { APP_VERSION, APP_VERSION_CODE, APP_DEVELOPER } from '@/constants/appInfo';
+import { checkForUpdate, isValidRepoSlug, type UpdateInfo } from '@/utils/updateChecker';
 
 /** گزینه‌های بازه بروزرسانی — عیناً از پامپی (settings-extract/02) */
 const REFRESH_INTERVAL_OPTIONS = [
@@ -53,27 +60,184 @@ const REFRESH_INTERVAL_OPTIONS = [
   { key: '30', label: '۳۰ دقیقه' },
 ];
 
-/** سه راهنمای مدیریت دارایی — عیناً از پامپی (settings-extract/04) */
+/** راهنماهای مدیریت دارایی — v1.2.0 (تب‌ها + IP) */
 const HELP_SECTIONS = [
   {
     id: 'wallet',
-    title: '👛 مدیریت دارایی',
+    title: '👛 مدیریت دارایی (نمای کلی)',
     content:
-      'این بخش چهار تب دارد و کل سرمایه شما را یکجا نشان می‌دهد (ترتیب تب‌ها از سمت راست: دارایی ریالی و فلزات، پیش‌بینی طلا، کیف پول بلاکچین، ارز دیجیتال):\n\n💠 تب «ارز دیجیتال»: صرافی‌های خود را اضافه کنید (بایننس، بیت‌پرپ با ورود ایمیل+کد یکبارمصرف، بای‌بیت، اوکی‌ایکس و…) و موجودی کامل (Overview) را ببینید: اسپات + ارن (سپرده‌گذاری) + فاندینگ + فیوچرز + آلفا — برای هر دارایی سود/زیان تقریبی (PnL) و برای کل صرافی یک PnL کلی. ردیف‌هایی که قیمتشان موقتاً در دسترس نیست حذف نمی‌شوند و با «قیمت نامشخص» نمایش داده می‌شوند؛ قیمت‌ها از بایننس اسپات و فیوچرز (کوین‌هایی مثل POPCAT فقط در فیوچرز معامله می‌شوند) خوانده می‌شوند. مجموع کل دارایی از همه صرافی‌ها (دلاری و تومانی) در کارت بالای همین صفحه است.\n\n🏦 تب «دارایی ریالی و فلزات»: قیمت‌های لحظه‌ای تومان (طلای ۱۸/۲۴ عیار، نقره، سکه‌های امامی/بهار/نیم/ربع، دلار آزاد و تتر) + ورود دارایی‌های فیزیکی خودتان (ریال نقدی، دلار کاغذی، طلا با عیار، نقره، سکه) + سه ردیف خلاصه ارز دیجیتال به همان الگو: «ارز دیجیتال — کیف‌های صرافی» (ارزش دلاری + معادل تومانی)، «کیف پول بلاکچین» و «تتر کل» (تعداد USDT صرافی + بلاکچین با معادل تومانی). کارت سود/زیان ۷/۳۰/۹۰/۱۸۰ روزه همه دارایی‌ها (طلا/دلار/سکه + کیف بلاکچین) و «مجموع کل» همه‌چیز در یک عدد.\n\n🥇 تب «پیش‌بینی طلا»: تحلیل و پیش‌بینی قیمت شمش خام ۹۹۵ در بورس کالا (IME) با فاصله اطمینان.\n\n⛓ تب «کیف پول بلاکچین (فقط خواندنی)»: آدرس عمومی کیف‌هایتان (تراست ولتم، تون‌کیپر، متامسک و…) را اضافه کنید — از منوی کشویی هر تعداد شبکه را تیک بزنید (۵۱ شبکه: همه شبکه‌های EVM با یک آدرس 0x + سولانا + تون + ترون + بیت‌کوین و…). یک آدرس روی چند شبکه همزمان خوانده می‌شود؛ سود/زیان کل در بالا با انتخاب تایم‌فریم و هر کیف در یک خط جدا + جزئیات هر ارز در همان خط. قیمت تتر به تومان به‌صورت خودکار و پنهان از منابع متعدد خوانده می‌شود و ارزش کل پورتفوی و سود/زیان هر ارز بر همین اساس محاسبه می‌گردد.',
+      'این بخش چهار تب دارد و کل سرمایه شما را یکجا نشان می‌دهد (ترتیب تب‌ها از سمت راست: دارایی ریالی و فلزات، پیش‌بینی طلا، کیف پول بلاکچین، ارز دیجیتال). تب «دارایی ریالی و فلزات» بدون فیلترشکن هم کامل کار می‌کند؛ دو تب «ارز دیجیتال» و «کیف پول بلاکچین» برای امنیت دارایی شما فقط با IP غیرتحریمی (فیلترشکن روشن) فعال می‌شوند — توضیح کامل در راهنمای «IP و فیلترشکن».',
   },
   {
-    id: 'blockchain-wallet',
-    title: '⛓ کیف پول بلاکچین (فقط خواندنی)',
+    id: 'crypto-tab',
+    title: '💠 تب ارز دیجیتال (صرافی‌ها) — چطور کار می‌کند؟',
     content:
-      'مثل داشتن تراست ولتم داخل همین برنامه — بدون ریسک:\n\n• فقط آدرس عمومی وارد می‌کنید؛ نه کلید خصوصی نه عبارت بازیابی — برداشت از کیف شما غیرممکن است.\n• منوی کشویی شبکه‌ها: ۵۱ شبکه پشتیبانی می‌شود — همه شبکه‌های اتریومی (اتریوم، بایننس/اسمارت‌چین، پالیگان، آربیتروم، بیس، آوالانچ، فانتوم، zkSync، لینئا، منتل، opBNB، اسکرول، بلاست، گنوزیس، سیلُ، کرونوس، مون‌بیم/مون‌ریور، آرورا، هارمونی، KCC، فیوز، XDC، زورا، zkEVM پالیگان، Immutable، سونیک، فایل‌کوین) با یک آدرس 0x مشترک + شبکه‌های مستقل: سولانا، تون (آدرس UQ/EQ کیف Tonkeeper)، ترون، بیت‌کوین، لایت‌کوین، دوج‌کوین، بیت‌کوین کش، ریپل، کاردانو، پولکادات، کازموس، نیر، آپتوس، سویی، استلار، الگورند، تزوس، مالتی‌ورس‌ایکس، هدرا، زیلیکا، وی‌چین و کسپا.\n• همه ارزهای بایننس روی آن شبکه‌ها خوانده می‌شوند (قیمت‌ها از بایننس اسپات+فیوچرز و برای بقیه کوین‌ها CoinGecko)؛ اگر ارزی قیمت لحظه‌ای نداشت، ردیفش با «قیمت نامشخص» می‌ماند و حذف نمی‌شود.\n• سود/زیان سه‌سطحی: مجموع کل در کارت بالا با انتخاب تایم‌فریم (۷/۳۰/۹۰/۱۸۰ روز)، هر کیف در یک خط جداگانه و داخل هر کیف برای تک‌تک ارزها.\n• دکمه رفرش هر کیف موجودی همان کیف را از نو می‌خواند؛ دکمه ویرایش (مداد) نام و شبکه‌های کیف را تغییر می‌دهد.\n• دارایی این تب در تب «دارایی ریالی و فلزات» هم حساب می‌شود (ردیف کیف بلاکچین + ردیف تتر کل).',
+      'صرافی‌هایتان را با API Key اضافه کنید (بایننس، بای‌بیت، اوکی‌ایکس، کوکوین و ۲۰ صرافی دیگر + بیت‌پرپ با ورود ایمیل و کد یکبارمصرف). فقط از دسترسی Read-Only استفاده کنید؛ کلیدها فقط روی حافظهٔ خود دستگاه ذخیره می‌شوند.\n\nچه چیزی نشان می‌دهد: موجودی کامل هر صرافی (اسپات + ارن/سپرده‌گذاری + فاندینگ + فیوچرز + آلفا)، ارزش دلاری و تومانی هر دارایی، سود/زیان تقریبی هر کوین نسبت به میانگین خرید (از تاریخچهٔ معاملات) و PnL کلی صرافی با تایم‌فریم‌های امروز/۳۰/۹۰/۱۸۰/۳۶۰ روز (پیش‌فرض: امروز). کارت بالای صفحه مجموع همهٔ صرافی‌ها را دلاری و تومانی نشان می‌دهد.\n\nقیمت‌ها: از بایننس اسپات و فیوچرز خوانده می‌شود (کوین‌هایی مثل POPCAT فقط در فیوچرز معامله می‌شوند)؛ برای بقیه CoinGecko. ردیف‌های بدون قیمت حذف نمی‌شوند و با «قیمت نامشخص» می‌مانند.\n\n⚠️ این تب فقط با IP غیرتحریمی کار می‌کند؛ با IP ایران پیام خطای IP می‌بینید و هیچ درخواستی به صرافی‌ها نمی‌رود.',
+  },
+  {
+    id: 'gold-tab',
+    title: '🥇 تب پیش‌بینی قیمت طلا — چطور کار می‌کند؟',
+    content:
+      'این تب قیمت طلای ۱۸ عیار فردا/سررسید بعدی را از بازار آتی بورس کالا (IME) تخمین می‌زند:\n\n• قیمت لحظه‌ای طلا از TGJU خوانده می‌شود (گرم ۱۸ و ۲۴ عیار).\n• قراردادهای «آتی شمش طلای خام ۹۹۵» بورس کالا را می‌خواند: آخرین سررسید، قیمت هر گرم شمش ۹۹۵ و جدول همهٔ سررسیدها.\n• تبدیل: طلای ۱۸ عیار = قیمت شمش ۹۹۵ × ضریب ۷۵۰÷۹۹۵ (همان فرمول رایج بازار). عدد بزرگ صفحه = پیش‌بینی گرم ۱۸ عیار بر اساس آخرین معاملهٔ آتی؛ اختلافش با قیمت روز را هم کنارش نشان می‌دهد.\n• اگر IME در دسترس نباشد، حالت «ورود دستی» باز می‌شود تا قیمت شمش ۹۹۵ را خودتان وارد کنید و محاسبه با همان انجام شود.\n• دکمهٔ رفرش، هم قیمت‌های TGJU و هم قراردادهای آتی را از نو می‌خواند. این تب با IP ایران هم کار می‌کند (منابع داخلی‌اند؛ فقط جدول IME ممکن است موقتاً در دسترس نباشد).',
   },
   {
     id: 'rial-assets',
-    title: '🏦 دارایی ریالی و فلزات',
+    title: '🏦 تب دارایی ریالی و فلزات',
     content:
-      'مدیریت دارایی‌های غیرکریپتوی شما:\n\n• قیمت‌های لحظه‌ای تومان از TGJU: طلای ۱۸ و ۲۴ عیار، نقره ۹۹۹/۹۲۵، سکه امامی/بهار/نیم/ربع، دلار آزاد و تتر — با دکمه رفرش.\n• ورودی‌های شما: ریال/تومان نقدی، دلار کاغذی (فیزیکی)، تتر USDT (دستی، مثل دلار کاغذی؛ جدا از تتر صرافی/کیف بلاکچین حساب می‌شود)، طلا بر حسب گرم با انتخاب عیار ۱۸ یا ۲۴، نقره با نوع ۹۹۹ یا ۹۲۵ و سکه‌ها بر حسب تعداد — همه در حافظه دستگاه ذخیره می‌شوند و هر ردیف ارزش تومانی خودش را کنارش نشان می‌دهد.\n• «مجموع کل دارایی» = ریال + دلار کاغذی + تتر + طلا + نقره + سکه + ارز دیجیتال + کیف بلاکچین؛ همیشه بالای بخش دیده می‌شود.\n• کارت سود/زیان ۷/۳۰/۹۰/۱۸۰ روزه بر اساس تاریخچه قیمت روزانه (TGJU برای فلزات/دلار و بایننس/CoinGecko برای کریپتو) — تغییر ارزش بازار دارایی‌های امروز شما.',
+      'مدیریت دارایی‌های غیرکریپتوی شما — بدون فیلترشکن کامل کار می‌کند:\n\n• قیمت‌های لحظه‌ای تومان از TGJU: طلای ۱۸/۲۴ عیار، نقره ۹۹۹/۹۲۵، سکه امامی/بهار/نیم/ربع، دلار آزاد و تتر — با دکمهٔ رفرش که هر بار یک دریافت واقعی انجام می‌دهد.\n• وضعیت بازار جهانی طلا (باز/بسته) کنار قیمت انس جهانی: بازار باز → کادر سبز، بازار بسته → کادر قرمز.\n• ورودی‌های شما: ریال/تومان نقدی، دلار کاغذی، تتر دستی (جدا از تتر صرافی/کیف)، طلا بر حسب گرم با عیار ۱۸ یا ۲۴، نقره ۹۹۹/۹۲۵ و سکه‌ها — همه در حافظهٔ دستگاه و هر ردیف با ارزش تومانی زنده.\n• کارت سود/زیان با تایم‌فریم‌های «امروز/۷/۳۰/۹۰/۱۸۰ روز» (پیش‌فرض: امروز) بر اساس تاریخچهٔ قیمت روزانهٔ TGJU؛ سهم کیف پول بلاکچین هم در همان کارت محاسبه می‌شود.\n• «مجموع کل دارایی» = ریال + دلار + تتر + طلا + نقره + سکه + ارز دیجیتال صرافی‌ها + کیف پول بلاکچین.',
+  },
+  {
+    id: 'blockchain-wallet',
+    title: '⛓ تب کیف پول بلاکچین (فقط خواندنی)',
+    content:
+      'مثل داشتن تراست ولتم داخل همین برنامه — بدون هیچ ریسکی:\n\n• فقط آدرس عمومی وارد می‌کنید؛ نه کلید خصوصی نه عبارت بازیابی — برداشت از کیف شما غیرممکن است.\n• منوی کشویی شبکه‌ها: ۵۱ شبکه — همهٔ شبکه‌های EVM (اتریوم، BSC، پالیگان، آربیتروم، بیس، آوالانچ و…) با یک آدرس 0x مشترک + شبکه‌های مستقل: تون (Tonkeeper)، ترون، سولانا، بیت‌کوین، ریپل، فایل‌کوین و… که آدرس اختصاصی خودشان را در کادر همان شبکه وارد می‌کنید.\n• لیست دارایی‌ها: هر ارز با آیکون واقعی خودش؛ نام ارز سمت راست و شبکهٔ آن داخل پرانتز جلوش (همچنین نشان کوچکِ رنگی شبکه روی گوشهٔ آیکون). وسط ردیف: تعداد دارایی و زیرش درصد رشد همان تایم‌فریم؛ سمت چپ: ارزش کل و زیرش سود/زیان دلاری ($ و درصد).\n• Tonkeeper: آدرس UQ/EQ کیف تون را اضافه کنید — موجودی TON و همهٔ جتون‌ها (مثل USDT تون) خوانده می‌شود (سه منبع پشتیبان + تلاش مجدد خودکار).\n• سود/زیان سه‌سطحی با تایم‌فریم‌های امروز/۷/۳۰/۹۰/۱۸۰ روز: کل در بالا، هر کیف یک خط، و هر ارز داخل کیف. دارایی این تب در تب ریالی هم حساب می‌شود.\n• این تب فقط با IP غیرتحریمی کار می‌کند؛ با IP ایران هیچ درخواستی به سرورهای بلاکچین نمی‌رود.',
+  },
+  {
+    id: 'ip-vpn',
+    title: '🌐 IP و فیلترشکن — برنامه با هر IP چطور کار می‌کند؟',
+    content:
+      'برنامه هر چند ثانیه کشور IP خروجی شما را چک می‌کند (۴ سرویس مستقل + سرور خودمان) و بسته به نتیجه این‌طور رفتار می‌کند:\n\n🔴 IP ایران یا کشور تحریمی (فیلترشکن خاموش):\n• تب «ارز دیجیتال» و تب «کیف پول بلاکچین» کاملاً غیرفعال می‌شوند و به‌جای داده، کارت خطای IP با توضیح علت می‌بینید.\n• مهم: با این IP حتی یک بایت از گوشی شما به صرافی‌ها و سرورهای بلاکچین نمی‌رسد — این گیت هم در لایهٔ کوئری‌ها است و هم داخل خود توابع دریافت؛ پس دارایی شما هرگز در معرض اتصال خطرناک قرار نمی‌گیرد.\n• چرا؟ صرافی‌های خارجی با IP ایران حساب را ریسک‌فلگ/مسدود می‌کنند (خطای 451/418) و APIهای بلاکچین هم از ایران در دسترس نیستند.\n• تب‌های «دارایی ریالی و فلزات» و «پیش‌بینی طلا» عادی کار می‌کنند (منابع: TGJU و سایت‌های داخلی). قیمت تتر هم از منابع ایرانی خوانده می‌شود.\n\n🟢 فیلترشکن روشن و IP غیرتحریمی:\n• همهٔ تب‌ها فعال می‌شوند؛ صرافی‌ها و کیف‌های بلاکچین خودکار تازه می‌شوند (بدون نیاز به رفرش دستی).\n• اگر یک صرافی خاص کشورِ IP شما را تحریم کرده باشد، فقط همان صرافی پیام «این IP تحریم شده» می‌دهد و بقیه کار می‌کنند — IP دیگری در فیلترشکن انتخاب کنید.\n\n⚪ اگر هیچ سرویسی نتوانست کشور را تشخیص دهد، وضعیت «نامشخص» می‌شود و برنامه محتاطانه مانع هیچ بخشی نمی‌شود (فقط بنر هشدار در صورت اتصال صرافی خارجی).',
   },
 ];
+
+/** ── v1.2.0 — کارت بررسی بروزرسانی ── */
+function UpdateCard() {
+  const { settings, updateSettings } = useApp();
+  const savedRepo = settings.githubRepo ?? '';
+  const [repoInput, setRepoInput] = useState(savedRepo);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<UpdateInfo | null>(null);
+  const [savedFlash, setSavedFlash] = useState(false);
+
+  const repoValid = isValidRepoSlug(repoInput);
+  const repoChanged = repoInput.trim() !== savedRepo;
+
+  const check = useCallback(async () => {
+    const repo = repoChanged ? repoInput.trim() : savedRepo;
+    if (!isValidRepoSlug(repo)) return;
+    if (repoChanged) {
+      updateSettings({ githubRepo: repo });
+      setSavedFlash(true);
+      setTimeout(() => setSavedFlash(false), 2000);
+    }
+    setBusy(true);
+    setResult(null);
+    try {
+      setResult(await checkForUpdate(repo, APP_VERSION));
+    } finally {
+      setBusy(false);
+    }
+  }, [repoChanged, repoInput, savedRepo, updateSettings]);
+
+  const download = (url?: string) => {
+    if (url) void Linking.openURL(url);
+  };
+
+  return (
+    <View style={styles.updateCard}>
+      <View style={styles.updateHeadRow}>
+        <Text style={styles.updateTitle}>بروزرسانی برنامه</Text>
+        <Text style={styles.updateVersion}>
+          نصب‌شده: {APP_VERSION} (کد {APP_VERSION_CODE.toLocaleString('fa-IR')})
+        </Text>
+      </View>
+
+      <Text style={styles.updateHint}>
+        ریپوی گیتهاب خود را وارد کنید (به شکل owner/repo) و دکمهٔ چک را بزنید. هر وقت در گیتهاب
+        یک Release جدید با فایل APK منتشر کنید، پیام نسخهٔ جدید همراه توضیحات و دکمهٔ دانلود
+        بالای صفحهٔ برنامه ظاهر می‌شود.
+      </Text>
+
+      <View style={styles.updateInputRow}>
+        <TextInput
+          style={[styles.updateInput, repoValid && repoInput.trim() ? styles.updateInputOk : null]}
+          value={repoInput}
+          onChangeText={setRepoInput}
+          placeholder="مثلاً myuser/asset-management"
+          placeholderTextColor={colors.dark.textMuted}
+          autoCapitalize="none"
+          autoCorrect={false}
+          testID="update-repo-input"
+        />
+        <Pressable
+          style={[styles.checkBtn, (!repoValid || busy) && styles.checkBtnDisabled]}
+          disabled={!repoValid || busy}
+          onPress={() => void check()}
+          testID="check-update-btn"
+        >
+          {busy ? (
+            <ActivityIndicator size="small" color={colors.dark.background} />
+          ) : (
+            <>
+              <Github size={14} color={colors.dark.background} />
+              <Text style={styles.checkBtnText}>
+                {savedFlash ? 'ذخیره شد ✓' : 'چک بروزرسانی'}
+              </Text>
+            </>
+          )}
+        </Pressable>
+      </View>
+
+      {result && !result.error && !result.available && (
+        <View style={styles.resultRow}>
+          <CheckCircle2 size={15} color={colors.dark.green} />
+          <Text style={styles.resultOk}>
+            {result.latestVersion
+              ? `به‌روز هستید — آخرین نسخه روی گیتهاب: ${result.latestVersion}`
+              : 'به‌روز هستید'}
+          </Text>
+        </View>
+      )}
+
+      {result && result.available && (
+        <View style={styles.updateFoundBox}>
+          <Text style={styles.updateFoundTitle}>
+            نسخه جدید {result.latestVersion} موجود است
+          </Text>
+          {(result.notes ?? '')
+            .split('\n')
+            .map((l) => l.trim())
+            .filter(Boolean)
+            .slice(0, 5)
+            .map((l, i) => (
+              <Text key={i} style={styles.updateFoundNote} numberOfLines={3}>
+                • {l.replace(/^[-*•]\s*/, '')}
+              </Text>
+            ))}
+          <Pressable
+            style={styles.downloadBtn}
+            onPress={() => download(result.apkUrl || result.releaseUrl)}
+          >
+            <Download size={14} color={colors.dark.background} />
+            <Text style={styles.downloadBtnText}>
+              {result.apkUrl ? 'دانلود مستقیم APK' : 'رفتن به صفحهٔ دانلود'}
+            </Text>
+          </Pressable>
+        </View>
+      )}
+
+      {result?.error && result.error !== 'no-repo' && (
+        <View style={styles.resultRow}>
+          <XCircle size={15} color={colors.dark.red} />
+          <Text style={styles.resultErr}>
+            {result.error === 'github-unreachable'
+              ? 'دسترسی به گیتهاب برقرار نشد — بعداً تلاش کنید'
+              : `خطا: ${result.error}`}
+          </Text>
+        </View>
+      )}
+      {result?.error === 'no-release' && (
+        <View style={styles.resultRow}>
+          <XCircle size={15} color={colors.dark.orange} />
+          <Text style={styles.resultErr}>
+            برای این ریپو هنوز Release نسخه‌سازی شده — در گیتهاب Releases → New release با تگ
+            v1.2.1 بسازید و فایل APK را پیوست کنید
+          </Text>
+        </View>
+      )}
+    </View>
+  );
+}
 
 export default function SettingsScreen() {
   const { settings, updateSettings, setAppThemeMode, themeMode } = useApp();
@@ -91,6 +255,14 @@ export default function SettingsScreen() {
       <View style={styles.header}>
         <Text style={styles.headerTitle}>تنظیمات</Text>
       </View>
+
+      {/* ── بررسی IP و فیلترشکن (هر ۳ ثانیه اتوماتیک) ── */}
+      <View style={styles.ipWrap}>
+        <IpStatusCard />
+      </View>
+
+      {/* ── v1.2.0 — بررسی بروزرسانی ──────────────────────────── */}
+      <UpdateCard />
 
       {/* ── تنظیمات بروزرسانی (extract 01+02) ──────────────────── */}
       <View style={styles.section}>
@@ -171,7 +343,7 @@ export default function SettingsScreen() {
         </Text>
       </View>
 
-      {/* ── راهنما (extract 04) ────────────────────────────────── */}
+      {/* ── راهنما ─────────────────────────────────────────────── */}
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
           <HelpCircle size={18} color={colors.dark.accent} />
@@ -210,11 +382,18 @@ export default function SettingsScreen() {
         </View>
         <View style={styles.aboutRow}>
           <View style={styles.aboutBadge}>
-            <Clock size={26} color={colors.dark.accent} />
+            <Image source={require('@/assets/images/icon.png')} style={styles.aboutLogo} />
           </View>
           <View style={styles.aboutTextWrap}>
             <Text style={styles.aboutName}>مدیریت دارایی</Text>
-            <Text style={styles.aboutVersion}>نسخه {APP_VERSION}</Text>
+            <Text style={styles.aboutVersion}>
+              نسخه {APP_VERSION} (کد {APP_VERSION_CODE.toLocaleString('fa-IR')})
+            </Text>
+            {/* v1.2.0 — نام سازندهٔ برنامه */}
+            <View style={styles.devRow}>
+              <User size={12} color={colors.dark.accent} />
+              <Text style={styles.devText}>سازنده: {APP_DEVELOPER}</Text>
+            </View>
           </View>
         </View>
         <Text style={styles.hintText}>
@@ -247,6 +426,9 @@ const styles = createThemedStyles(() =>
       fontWeight: '700' as const,
       color: colors.dark.text,
     },
+    ipWrap: {
+      marginBottom: 16,
+    },
     section: {
       backgroundColor: colors.dark.card,
       borderRadius: 16,
@@ -275,6 +457,127 @@ const styles = createThemedStyles(() =>
       marginTop: 10,
       lineHeight: 20,
     },
+
+    // ── v1.2.0 — کارت بروزرسانی ──
+    updateCard: {
+      backgroundColor: colors.dark.card,
+      borderRadius: 16,
+      padding: 16,
+      marginBottom: 16,
+      borderWidth: 1,
+      borderColor: colors.dark.accent + '44',
+      gap: 10,
+    },
+    updateHeadRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 8,
+    },
+    updateTitle: {
+      fontSize: 15,
+      fontWeight: '700' as const,
+      color: colors.dark.text,
+    },
+    updateVersion: {
+      fontSize: 11.5,
+      fontWeight: '700' as const,
+      color: colors.dark.accent,
+    },
+    updateHint: {
+      fontSize: 11.5,
+      lineHeight: 19,
+      color: colors.dark.textMuted,
+      textAlign: 'right',
+    },
+    updateInputRow: {
+      flexDirection: 'row',
+      gap: 8,
+    },
+    updateInput: {
+      flex: 1,
+      backgroundColor: colors.dark.inputBg,
+      borderWidth: 1,
+      borderColor: colors.dark.border,
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      fontSize: 12.5,
+      color: colors.dark.text,
+      textAlign: 'left',
+    },
+    updateInputOk: {
+      borderColor: colors.dark.green + '88',
+    },
+    checkBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      backgroundColor: colors.dark.accent,
+      borderRadius: 10,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+    },
+    checkBtnDisabled: {
+      opacity: 0.5,
+    },
+    checkBtnText: {
+      fontSize: 12,
+      fontWeight: '800' as const,
+      color: colors.dark.background,
+    },
+    resultRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    resultOk: {
+      flex: 1,
+      fontSize: 12,
+      color: colors.dark.green,
+      textAlign: 'right',
+    },
+    resultErr: {
+      flex: 1,
+      fontSize: 11.5,
+      lineHeight: 18,
+      color: colors.dark.red,
+      textAlign: 'right',
+    },
+    updateFoundBox: {
+      backgroundColor: colors.dark.greenDim,
+      borderRadius: 12,
+      padding: 12,
+      gap: 6,
+    },
+    updateFoundTitle: {
+      fontSize: 13,
+      fontWeight: '800' as const,
+      color: colors.dark.green,
+      textAlign: 'right',
+    },
+    updateFoundNote: {
+      fontSize: 11,
+      lineHeight: 17,
+      color: colors.dark.textSecondary,
+      textAlign: 'right',
+    },
+    downloadBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      backgroundColor: colors.dark.accent,
+      borderRadius: 10,
+      paddingVertical: 10,
+      marginTop: 4,
+    },
+    downloadBtnText: {
+      fontSize: 12.5,
+      fontWeight: '800' as const,
+      color: colors.dark.background,
+    },
+
     themeRow: {
       flexDirection: 'row',
       gap: 10,
@@ -344,6 +647,12 @@ const styles = createThemedStyles(() =>
       backgroundColor: colors.dark.accentDim,
       alignItems: 'center',
       justifyContent: 'center',
+      overflow: 'hidden',
+    },
+    aboutLogo: {
+      width: 46,
+      height: 46,
+      borderRadius: 11,
     },
     aboutTextWrap: {
       flex: 1,
@@ -359,6 +668,18 @@ const styles = createThemedStyles(() =>
       color: colors.dark.textMuted,
       textAlign: 'right',
       marginTop: 2,
+    },
+    devRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      justifyContent: 'flex-end',
+      marginTop: 4,
+    },
+    devText: {
+      fontSize: 12,
+      fontWeight: '700' as const,
+      color: colors.dark.accent,
     },
   })
 );

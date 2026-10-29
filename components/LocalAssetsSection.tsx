@@ -23,8 +23,13 @@ import {
   parseTomanInput,
   formatFullToman,
   IranMarketPrices,
+  clearIranMarketMemoryCache,
 } from '@/utils/iranMarketApi';
 import { formatToman } from '@/utils/nobitexApi';
+import {
+  isGlobalGoldMarketOpen,
+  globalGoldMarketLabel,
+} from '@/utils/globalMarketHours';
 import {
   fetchTgjuCloses,
   closeAtOrBefore,
@@ -133,6 +138,15 @@ export default function LocalAssetsSection({
   const [assets, setAssets] = useState<LocalAssets>(EMPTY_ASSETS);
   // v1.4.16 — «دارایی‌های من» collapsible with its own arrow; persisted.
   const [expanded, setExpanded] = useState(true);
+  // v1.1.0 — باز/بسته بودن بازار جهانی طلا (برای رنگ انس/دلار/طلای ۱۸)؛
+  // هر ۶۰ ثانیه دوباره ارزیابی می‌شود تا گذر از مرز باز/بسته دیده شود.
+  const [goldMarketTick, setGoldMarketTick] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => setGoldMarketTick((t) => t + 1), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+  const goldMarketOpen = useMemo(() => isGlobalGoldMarketOpen(), [goldMarketTick]);
+  const goldMarketText = useMemo(() => globalGoldMarketLabel(), [goldMarketTick]);
   const queryClient = useQueryClient();
 
   useEffect(() => {
@@ -173,6 +187,9 @@ export default function LocalAssetsSection({
   }, []);
 
   const refresh = useCallback(() => {
+    // v1.2.0 — «رفرش یک‌بار کار می‌کند دفعهٔ دوم نه»: اول کش ۶۰ ثانیه‌ای حافظه
+    // خالی می‌شود تا invalidate واقعاً یک درخواست تازه بزند، نه برگرداندن همان کش.
+    clearIranMarketMemoryCache();
     queryClient.invalidateQueries({ queryKey: ['iran-market-prices'] });
   }, [queryClient]);
 
@@ -244,8 +261,15 @@ export default function LocalAssetsSection({
       <View style={styles.priceBlock}>
         <Text style={styles.blockLabel}>قیمت‌های لحظه‌ای</Text>
         <View style={styles.priceGrid}>
-          <PriceChip label="انس جهانی طلا ($)" value={p?.goldOunceUsd} usd />
-          <PriceChip label="طلای ۱۸ عیار (گرم)" value={p?.gold18} />
+          {/* v1.1.0 — انس: بازار باز → سبز، بازار بسته → قرمز (درخواست کاربر) */}
+          <PriceChip
+            label="انس جهانی طلا ($)"
+            value={p?.goldOunceUsd}
+            usd
+            tone={goldMarketOpen ? 'open' : 'closed'}
+          />
+          {/* با بازارِ باز این کادرها با رنگ متمایز (سبز) بهتر دیده می‌شوند */}
+          <PriceChip label="طلای ۱۸ عیار (گرم)" value={p?.gold18} tone="open" />
           <PriceChip label="طلای ۲۴ عیار (گرم)" value={p?.gold24} />
           <PriceChip label="نقره ۹۹۹ (گرم)" value={p?.silver999} />
           <PriceChip label="نقره ۹۲۵ (گرم)" value={p?.silver925} />
@@ -253,11 +277,31 @@ export default function LocalAssetsSection({
           <PriceChip label="سکه بهار آزادی" value={p?.coinBahar} />
           <PriceChip label="نیم سکه" value={p?.coinNim} />
           <PriceChip label="ربع سکه" value={p?.coinRob} />
-          <PriceChip label="دلار آزاد" value={p?.dollar} />
+          <PriceChip label="دلار آزاد" value={p?.dollar} tone="open" />
           <PriceChip
             label="تتر"
             value={usdtToToman > 0 ? usdtToToman : undefined}
           />
+        </View>
+        {/* v1.1.0 — وضعیت بازار جهانی طلا، کنار همین قیمت‌ها */}
+        <View style={styles.marketStatusRow}>
+          <View
+            style={[
+              styles.marketStatusDot,
+              { backgroundColor: goldMarketOpen ? colors.dark.green : colors.dark.red },
+            ]}
+          />
+          <Text
+            style={[
+              styles.marketStatusText,
+              { color: goldMarketOpen ? colors.dark.green : colors.dark.red },
+            ]}
+          >
+            {goldMarketText.text}
+          </Text>
+          {!goldMarketOpen && (
+            <Text style={styles.marketStatusHint}>— قیمت انس تا باز‌شدن بازار تغییر نمی‌کند</Text>
+          )}
         </View>
         {p && (
           <Text style={styles.priceNote}>منبع: TGJU • {minutesOld} دقیقه پیش</Text>
@@ -519,14 +563,28 @@ export default function LocalAssetsSection({
 // (v1.4.15 — moved to the top of the section + paper-USD row included)
 // ---------------------------------------------------------------------------
 
-const PNL_PERIODS = [7, 30, 90, 180] as const;
+// v1.2.0 — «تایم‌فریم امروز هم اضافه کن و پیش‌فرض روی امروز باشه»:
+// امروز (۱) = تغییر قیمت از پایان روز گذشته (کلوزِ at-or-before نیمه‌شب محلی)
+// تا الان. بقیه همان بازه‌های N روزه قبلی.
+const PNL_PERIODS = [1, 7, 30, 90, 180] as const;
 type LocalPnlPeriod = (typeof PNL_PERIODS)[number];
 const PNL_PERIOD_LABEL: Record<LocalPnlPeriod, string> = {
+  1: 'امروز',
   7: '۷ روز',
   30: '۳۰ روز',
   90: '۹۰ روز',
   180: '۱۸۰ روز',
 };
+
+/** شروع بازه PnL: «امروز» = ابتدای روز محلی (۰۰:۰۰)؛ بقیه N روز به عقب. */
+function localPnlTarget(period: LocalPnlPeriod): number {
+  if (period === 1) {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  }
+  return Date.now() - period * 86_400_000;
+}
 
 interface HeldAssetSpec {
   key: string;
@@ -554,7 +612,7 @@ function LocalAssetsPnl({
   >;
   hasBlockchainWallet?: boolean;
 }) {
-  const [period, setPeriod] = useState<LocalPnlPeriod>(180);
+  const [period, setPeriod] = useState<LocalPnlPeriod>(1);
 
   const goldQty = parseTomanInput(assets.goldGrams) || 0;
   const silverQty = parseTomanInput(assets.silverGrams) || 0;
@@ -644,7 +702,8 @@ function LocalAssetsPnl({
 
   const rows = useMemo(() => {
     if (!seriesMap) return [] as Array<{ label: string; pnl: number; basis: number }>;
-    const target = Date.now() - period * 86_400_000;
+    // v1.2.0 — «امروز» = از ابتدای روز محلی؛ بقیه N روز به عقب
+    const target = localPnlTarget(period);
     const out: Array<{ label: string; pnl: number; basis: number }> = [];
     for (const h of held) {
       const series = seriesMap[h.symbol];
@@ -771,8 +830,9 @@ function LocalAssetsPnl({
           )}
 
           <Text style={styles.pnlNote}>
-            مبنا: قیمت پایان روزِ {PNL_PERIOD_LABEL[period]} پیش تا امروز (منبع: TGJU؛ کیف بلاکچین:
-            قیمت بایننس × نرخ تتر). تغییر ارزش بر اساس نوسان بازار است، نه زمان خرید واقعی شما.
+            {period === 1
+              ? 'مبنا: قیمت پایان روزِ گذشته تا همین الان (منبع: TGJU؛ کیف بلاکچین: قیمت بایننس × نرخ تتر). تغییر ارزش بر اساس نوسان بازار است، نه زمان خرید واقعی شما.'
+              : `مبنا: قیمت پایان روزِ ${PNL_PERIOD_LABEL[period]} پیش تا امروز (منبع: TGJU؛ کیف بلاکچین: قیمت بایننس × نرخ تتر). تغییر ارزش بر اساس نوسان بازار است، نه زمان خرید واقعی شما.`}
           </Text>
         </>
       )}
@@ -782,7 +842,18 @@ function LocalAssetsPnl({
 
 // ── sub-components ──
 
-function PriceChip({ label, value, usd }: { label: string; value?: number; usd?: boolean }) {
+function PriceChip({
+  label,
+  value,
+  usd,
+  tone,
+}: {
+  label: string;
+  value?: number;
+  usd?: boolean;
+  /** v1.1.0 — 'open' سبز (بازار باز)، 'closed' قرمز (بازار بسته — فقط انس) */
+  tone?: 'open' | 'closed';
+}) {
   // v1.5.12 — «قیمت انس جهانی طلا» دلاری است؛ بقیه تومانی.
   const text =
     value && value > 0
@@ -791,9 +862,24 @@ function PriceChip({ label, value, usd }: { label: string; value?: number; usd?:
         : formatFullToman(value)
       : '…';
   return (
-    <View style={styles.priceChip}>
+    <View
+      style={[
+        styles.priceChip,
+        tone === 'open' && styles.priceChipOpen,
+        tone === 'closed' && styles.priceChipClosed,
+      ]}
+    >
       <Text style={styles.priceChipLabel}>{label}</Text>
-      <Text style={[styles.priceChipValue, !value && styles.priceChipEmpty]}>{text}</Text>
+      <Text
+        style={[
+          styles.priceChipValue,
+          !value && styles.priceChipEmpty,
+          tone === 'open' && styles.priceChipValueOpen,
+          tone === 'closed' && styles.priceChipValueClosed,
+        ]}
+      >
+        {text}
+      </Text>
     </View>
   );
 }
@@ -960,6 +1046,15 @@ const styles = createThemedStyles(() =>
       borderWidth: 1,
       borderColor: colors.dark.border,
     },
+    // v1.1.0 — کادرهای متمایز (بازار باز → سبز / بسته → قرمز)
+    priceChipOpen: {
+      borderColor: colors.dark.green + '66',
+      backgroundColor: colors.dark.greenDim,
+    },
+    priceChipClosed: {
+      borderColor: colors.dark.red + '66',
+      backgroundColor: colors.dark.redDim,
+    },
     priceChipLabel: {
       fontSize: 10,
       color: colors.dark.textSecondary,
@@ -976,6 +1071,34 @@ const styles = createThemedStyles(() =>
     priceChipEmpty: {
       color: colors.dark.textSecondary,
       fontWeight: '400' as const,
+    },
+    // v1.1.0 — رنگ مقدار: باز → سبز، بسته → قرمز
+    priceChipValueOpen: {
+      color: colors.dark.green,
+    },
+    priceChipValueClosed: {
+      color: colors.dark.red,
+    },
+    // v1.1.0 — خط وضعیت بازار جهانی طلا زیر قیمت‌های لحظه‌ای
+    marketStatusRow: {
+      flexDirection: 'row-reverse',
+      alignItems: 'center',
+      gap: 6,
+      marginTop: 8,
+      flexWrap: 'wrap',
+    },
+    marketStatusDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+    },
+    marketStatusText: {
+      fontSize: 11,
+      fontWeight: '700' as const,
+    },
+    marketStatusHint: {
+      fontSize: 10,
+      color: colors.dark.textMuted,
     },
     priceNote: {
       fontSize: 9,

@@ -52,6 +52,7 @@ import {
   writeBlockchainBalanceCache,
 } from './blockchainWallets';
 import { STATIC_REGISTRY } from './tokenRegistry';
+import { getServerUrl } from './scanServerApi';
 
 const UA =
   'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36';
@@ -1001,25 +1002,88 @@ function mintSymbol(mint: string): string {
 // TON — tonapi.io v2 (Tonkeeper / Trust / MyTonWallet addresses)
 // ---------------------------------------------------------------------------
 
+/** v1.2.0 — retry کوتاه برای 429/5xx (rate-limit های tonapi/toncenter روی IPهای مشترک VPN) */
+async function fetchWithRetry<T>(fn: () => Promise<T>, attempts = 2): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastErr = e;
+      const msg = e instanceof Error ? e.message : '';
+      if (/HTTP (429|5\d\d)/.test(msg) && i < attempts - 1) {
+        await new Promise((r) => setTimeout(r, 1200));
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw lastErr;
+}
+
+/** v1.2.0 — نماد/اعشار جتون‌ها از IPFS metadata (کش دائمی در حافظه) */
+const tonJettonMetaCache = new Map<string, { symbol?: string; decimals?: number }>();
+async function tonJettonMeta(masterAddress: string): Promise<{ symbol?: string; decimals?: number }> {
+  const key = masterAddress.toLowerCase();
+  const hit = tonJettonMetaCache.get(key);
+  if (hit) return hit;
+  const out: { symbol?: string; decimals?: number } = {};
+  try {
+    const m = await fetchJson<{
+      jetton_masters?: {
+        jetton_content?: { uri?: string; symbol?: string; decimals?: string };
+      }[];
+    }>(
+      `https://toncenter.com/api/v3/jetton/masters?addresses=${encodeURIComponent(key)}`
+    );
+    const content = m?.jetton_masters?.[0]?.jetton_content;
+    if (content?.symbol) out.symbol = String(content.symbol).toUpperCase();
+    if (content?.decimals) out.decimals = Number(content.decimals);
+    if (!out.symbol && content?.uri) {
+      const uri = content.uri.replace('ipfs://', 'https://ipfs.io/ipfs/');
+      const meta = await fetchJson<{ symbol?: string; decimals?: string }>(uri);
+      if (meta?.symbol) out.symbol = String(meta.symbol).toUpperCase();
+      if (meta?.decimals) out.decimals = Number(meta.decimals);
+    }
+  } catch {}
+  tonJettonMetaCache.set(key, out);
+  return out;
+}
+
 async function fetchTonBalances(network: BlockchainNetwork, address: string): Promise<BlockchainTokenBalance[]> {
   const tokens: BlockchainTokenBalance[] = [];
   let nativeNano: number | null = null;
 
-  // tonapi v2 (user-friendly EQ/UQ or raw)
+  // v1.2.0 — زنجیرهٔ ۳گانه + retry: tonapi → toncenter v2 → toncenter v3
+  // («کیف تون‌کیپر را اضافه کردم موجودی را نمی‌خواند» — tonapi روی IPهای
+  // شلوغ VPN محدود می‌شود؛ حالا دو فال‌بک دیگر هم هست و 429 دوباره تلاش می‌شود.)
   try {
-    const acc = await fetchJson<{ balance?: string | number }>(
-      `https://tonapi.io/v2/accounts/${encodeURIComponent(address)}`
+    const acc = await fetchWithRetry(() =>
+      fetchJson<{ balance?: string | number }>(
+        `https://tonapi.io/v2/accounts/${encodeURIComponent(address)}`
+      )
     );
     nativeNano = bigStrToNumber(acc?.balance);
   } catch {}
 
-  // toncenter fallback (raw or user-friendly)
-  if (nativeNano === null || nativeNano === undefined) {
+  if (!nativeNano) {
     try {
-      const d = await fetchJson<{ result?: { balance?: string | number } }>(
-        `https://toncenter.com/api/v2/getExtendedAddressInformation?address=${encodeURIComponent(address)}`
+      const d = await fetchWithRetry(() =>
+        fetchJson<{ result?: { balance?: string | number } }>(
+          `https://toncenter.com/api/v2/getExtendedAddressInformation?address=${encodeURIComponent(address)}`
+        )
       );
       nativeNano = bigStrToNumber(d?.result?.balance);
+    } catch {}
+  }
+  if (!nativeNano) {
+    try {
+      const d = await fetchWithRetry(() =>
+        fetchJson<{ balance?: string | number }>(
+          `https://toncenter.com/api/v3/addressInformation?address=${encodeURIComponent(address)}`
+        )
+      );
+      nativeNano = bigStrToNumber(d?.balance);
     } catch {}
   }
 
@@ -1038,13 +1102,16 @@ async function fetchTonBalances(network: BlockchainNetwork, address: string): Pr
   }
 
   // jettons (TON's fungible tokens) — full discovery via tonapi
+  let jettonsFromTonapi = false;
   try {
-    const jets = await fetchJson<{
-      balances?: {
-        balance: string | number;
-        jetton?: { symbol?: string; name?: string; decimals?: number | string; address?: string };
-      }[];
-    }>(`https://tonapi.io/v2/accounts/${encodeURIComponent(address)}/jettons`);
+    const jets = await fetchWithRetry(() =>
+      fetchJson<{
+        balances?: {
+          balance: string | number;
+          jetton?: { symbol?: string; name?: string; decimals?: number | string; address?: string };
+        }[];
+      }>(`https://tonapi.io/v2/accounts/${encodeURIComponent(address)}/jettons`)
+    );
     for (const j of jets?.balances ?? []) {
       const sym = (j.jetton?.symbol ?? '?').toUpperCase();
       const dec = bigStrToNumber(j.jetton?.decimals ?? 9) || 9;
@@ -1061,8 +1128,49 @@ async function fetchTonBalances(network: BlockchainNetwork, address: string): Pr
         binancePair: binancePairFor(sym),
         network,
       });
+      if (j.jetton?.address) {
+        tonJettonMetaCache.set(String(j.jetton.address).toLowerCase(), {
+          symbol: sym,
+          decimals: dec,
+        });
+      }
     }
+    jettonsFromTonapi = tokens.some((t) => t.kind === 'token');
   } catch {}
+
+  // v1.2.0 — فال‌بک جتون‌ها با toncenter v3 (وقتی tonapi جواب نداد):
+  // jetton/wallets?owner_address → برای هر master، نماد از jetton/masters + IPFS
+  if (!jettonsFromTonapi) {
+    try {
+      const w = await fetchWithRetry(() =>
+        fetchJson<{
+          jetton_wallets?: { balance?: string | number; jetton?: string }[];
+        }>(
+          `https://toncenter.com/api/v3/jetton/wallets?owner_address=${encodeURIComponent(address)}`
+        )
+      );
+      for (const row of w?.jetton_wallets ?? []) {
+        const qtyRaw = bigStrToNumber(row?.balance);
+        if (!(qtyRaw > 0) || !row?.jetton) continue;
+        const meta = await tonJettonMeta(row.jetton);
+        const sym = (meta.symbol ?? '?').toUpperCase();
+        const dec = meta.decimals ?? 9;
+        const qty = qtyRaw / Math.pow(10, dec);
+        if (!(qty > 0)) continue;
+        tokens.push({
+          symbol: sym,
+          name: sym,
+          kind: 'token' as const,
+          qty,
+          priceUsd: isStableSymbol(sym) ? 1 : 0,
+          change24hPct: isStableSymbol(sym) ? 0 : null,
+          valueUsd: isStableSymbol(sym) ? qty : 0,
+          binancePair: binancePairFor(sym),
+          network,
+        });
+      }
+    } catch {}
+  }
 
   await fillPricesFromBinance(tokens);
   return tokens;
@@ -1685,6 +1793,100 @@ async function fetchNetworkBalances(
   return [];
 }
 
+// ---------------------------------------------------------------------------
+// v1.2.0 — آیکون واقعی ارزها: «دارایی را با آیکون همون ارز نشون بده»
+// منبع: CoinGecko markets (image) از طریق پروکسی سرور خودمان /cg-icons
+// (از ایران هم در دسترس است؛ کش حافظه ۱ ساعته + کش per-symbol دائمی).
+// ---------------------------------------------------------------------------
+
+const tokenIconCache = new Map<string, string>(); // SYMBOL → url
+const tokenIconIdCache = new Map<string, string>(); // cgId → url
+let tokenIconListFetchedAt = 0;
+const TOKEN_ICON_TTL = 60 * 60_000; // 1h
+
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+async function fetchIconMaps(
+  ids: string[],
+  symbols: string[]
+): Promise<{ byId: Record<string, string>; bySymbol: Record<string, string> }> {
+  const byId: Record<string, string> = {};
+  const bySymbol: Record<string, string> = {};
+  const base = (await getServerUrl().catch(() => 'https://asset-management1.up.railway.app')).replace(
+    /\/+$/,
+    ''
+  );
+  const idChunks = chunk(ids, 100);
+  const symChunks = chunk(symbols, 80);
+  const jobs: Promise<void>[] = [];
+  for (const ic of idChunks) {
+    jobs.push(
+      (async () => {
+        try {
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), 15_000);
+          const res = await fetch(`${base}/cg-icons?ids=${encodeURIComponent(ic.join(','))}`, {
+            signal: ctrl.signal,
+          });
+          clearTimeout(timer);
+          if (!res.ok) return;
+          const d = (await res.json()) as { byId?: Record<string, string> };
+          Object.assign(byId, d?.byId ?? {});
+        } catch {}
+      })()
+    );
+  }
+  for (const sc of symChunks) {
+    jobs.push(
+      (async () => {
+        try {
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), 15_000);
+          const res = await fetch(`${base}/cg-icons?symbols=${encodeURIComponent(sc.join(',').toLowerCase())}`, {
+            signal: ctrl.signal,
+          });
+          clearTimeout(timer);
+          if (!res.ok) return;
+          const d = (await res.json()) as { bySymbol?: Record<string, string> };
+          Object.assign(bySymbol, d?.bySymbol ?? {});
+        } catch {}
+      })()
+    );
+  }
+  await Promise.all(jobs);
+  return { byId, bySymbol };
+}
+
+/** آیکون هر توکن را (best-effort) پر می‌کند — خطا هرگز فچ موجودی را نمی‌شکند. */
+async function attachTokenIcons(tokens: BlockchainTokenBalance[]): Promise<void> {
+  const needIds = new Set<string>();
+  const needSymbols = new Set<string>();
+  for (const t of tokens) {
+    const sym = t.symbol.toUpperCase();
+    if (tokenIconCache.has(sym) || tokenIconIdCache.has(t.coingeckoId ?? '')) continue;
+    if (t.coingeckoId) needIds.add(t.coingeckoId);
+    else needSymbols.add(sym);
+  }
+  const now = Date.now();
+  if ((needIds.size > 0 || needSymbols.size > 0) && now - tokenIconListFetchedAt > 3_000) {
+    tokenIconListFetchedAt = now;
+    const { byId, bySymbol } = await fetchIconMaps([...needIds], [...needSymbols]);
+    for (const [id, url] of Object.entries(byId)) tokenIconIdCache.set(id, url);
+    for (const [sym, url] of Object.entries(bySymbol)) {
+      if (!tokenIconCache.has(sym)) tokenIconCache.set(sym, url);
+    }
+  }
+  for (const t of tokens) {
+    const sym = t.symbol.toUpperCase();
+    const url = (t.coingeckoId ? tokenIconIdCache.get(t.coingeckoId) : undefined) ?? tokenIconCache.get(sym);
+    if (url) t.icon = url;
+  }
+}
+
 const NETWORK_FETCH_CONCURRENCY = 4;
 
 /**
@@ -1772,6 +1974,9 @@ export async function fetchBlockchainWalletData(
   const tokens = [...known, ...unknown]
     .sort((a, b) => b.valueUsd - a.valueUsd)
     .slice(0, 60);
+
+  // v1.2.0 — آیکون واقعی هر ارز (best-effort؛ نبودش فقط یعنی آواتار حرفی)
+  await attachTokenIcons(tokens);
 
   const totalUsd = tokens.reduce((s, t) => s + (Number.isFinite(t.valueUsd) ? t.valueUsd : 0), 0);
   const data: BlockchainWalletData = {

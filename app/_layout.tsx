@@ -7,6 +7,10 @@
  *
  * The theme is read from the context (persisted «ظاهر برنامه» setting) so the
  * StatusBar matches the light/dark palette managed by constants/colors.ts.
+ *
+ * v1.1.0 — <ThemedAlertHost /> بالای Stack سوار شد. بدون آن هر ThemedAlert()
+ * فقط در یک Set بی‌مصرف ذخیره می‌شد و هیچ مودالی نشان داده نمی‌شد — علت اصلی
+ * «افزودن را می‌زنم اتفاقی نمی‌افتد» (خطای اعتبارسنجی آدرس بی‌صدا رد می‌شد).
  */
 
 import React, { useEffect } from 'react';
@@ -18,6 +22,9 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClient, QueryClientProvider, focusManager } from '@tanstack/react-query';
 import colors, { type ThemeMode } from '@/constants/colors';
 import { AppProvider, useApp } from '@/contexts/AppContext';
+import { ThemedAlertHost } from '@/components/ThemedAlert';
+// v1.2.0 — بنر بروزرسانی (بالای همهٔ صفحات وقتی Release جدیدی روی گیتهاب باشد)
+import UpdateBanner from '@/components/UpdateBanner';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -54,6 +61,10 @@ function RootNavigator() {
         style={mode === 'light' ? 'dark' : 'light'}
         backgroundColor={palette.statusBar}
       />
+      {/* v1.2.0 — پیام «نسخه جدید منتشر شد» بالای همهٔ صفحات (changelog + دانلود) */}
+      <UpdateBanner />
+      {/* v1.2.0 — با اضافه‌شدن بنر بالای استک، Stack باید خودش flex:1 بگیرد */}
+      <View style={styles.stackWrap}>
       <Stack
         screenOptions={{
           headerShown: false,
@@ -62,6 +73,10 @@ function RootNavigator() {
       >
         <Stack.Screen name="(tabs)" />
       </Stack>
+      {/* میزبان مودال‌های داخلی برنامه — بدون این، همهٔ ThemedAlert.alert()
+          (آدرس نامعتبر، تأیید حذف، خطای اتصال و…) بی‌صدا ناپدید می‌شوند */}
+      <ThemedAlertHost />
+      </View>
     </View>
   );
 }
@@ -85,4 +100,5 @@ export default function RootLayout() {
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   container: { flex: 1 },
+  stackWrap: { flex: 1 },
 });

@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, TextInput, ActivityIndicator, ScrollView } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, StyleSheet, Pressable, TextInput, ActivityIndicator, ScrollView, Image } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import {
   Link as LinkIcon,
   Plus,
@@ -15,6 +16,7 @@ import {
   ShieldAlert,
   RefreshCcw,
   Check,
+  Copy,
   Pencil,
 } from 'lucide-react-native';
 import colors from '@/constants/colors';
@@ -30,6 +32,7 @@ import {
   NETWORK_GROUPS,
   EVM_NETWORKS,
   shortAddress,
+  addressForNetwork,
   validateAddressForNetworks,
   validateBlockchainAddress,
   isEvmNetwork,
@@ -41,6 +44,8 @@ import {
 } from '@/utils/blockchainWalletApi';
 
 import { ThemedAlert } from '@/components/ThemedAlert';
+// v1.2.0 — کارت پیام IP تحریمی (جایگزین کامل محتوای تب با IP ایران)
+import IpBlockedNotice from '@/components/IpBlockedNotice';
 /**
  * BlockchainWalletsSection — v1.4.17
  *
@@ -131,6 +136,24 @@ export default function BlockchainWalletsSection({
   const totalToman = usdtToToman > 0 ? totalUsd * usdtToToman : 0;
   const anyFetching = wallets.some((w) => balanceByWallet[w.id]?.isFetching);
   const vpnBlocked = vpnStatus === 'iran';
+
+  // v1.2.0 — «دو تب کیف و ارز را کلا خاموش کن… و یه پیغام خطای IP در این دو
+  // تب نشون بده»: با IP تحریمی کل محتوای این تب (مجموع، کیف‌ها، PnL و فرم)
+  // جای خود را به کارت پیام IP می‌دهد؛ هیچ درخواستی هم در کوئری‌ها فعال نیست.
+  if (vpnBlocked) {
+    return (
+      <>
+        <IpBlockedNotice section="wallet" checking={vpnChecking} onRecheck={onRecheckVpn} />
+        {refreshToast ? (
+          <View style={styles.refreshToast}>
+            <Text style={styles.refreshToastText} numberOfLines={2}>
+              {refreshToast}
+            </Text>
+          </View>
+        ) : null}
+      </>
+    );
+  }
 
   return (
     <>
@@ -283,7 +306,7 @@ export default function BlockchainWalletsSection({
       {/* ── v1.4.19 — toast نتیجه رفرش («به‌روز شد — …») ── */}
       {refreshToast ? (
         <View style={styles.refreshToast}>
-          <Text style={styles.refreshToastText} numberOfLines={1}>
+          <Text style={styles.refreshToastText} numberOfLines={2}>
             {refreshToast}
           </Text>
         </View>
@@ -860,6 +883,55 @@ function AddBlockchainWalletForm({
 // Per-wallet card — one summary line (USD + PnL) + expandable tokens
 // ---------------------------------------------------------------------------
 
+/** v1.1.0 — کپی آدرس کیف (درخواست کاربر: «بتونم ادرس هر کیف بعد از افزودن کپی کنم») */
+function CopyAddressButton({
+  value,
+  size = 13,
+  withLabel = false,
+}: {
+  value: string;
+  size?: number;
+  withLabel?: boolean;
+}) {
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+  }, []);
+  const copy = async () => {
+    try {
+      await Clipboard.setStringAsync(value);
+      setCopied(true);
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* کلیپ‌بورد در دسترس نیست */
+    }
+  };
+  return (
+    <Pressable
+      style={({ pressed }) => [styles.copyBtn, pressed && { opacity: 0.7 }]}
+      onPress={(e) => {
+        e.stopPropagation();
+        void copy();
+      }}
+      hitSlop={6}
+      testID={`copy-address-${value.slice(0, 8)}`}
+    >
+      {copied ? (
+        <Check size={size} color={colors.dark.green} />
+      ) : (
+        <Copy size={size} color={colors.dark.accent} />
+      )}
+      {withLabel && (
+        <Text style={[styles.copyBtnText, copied && { color: colors.dark.green }]}>
+          {copied ? 'کپی شد ✓' : 'کپی آدرس'}
+        </Text>
+      )}
+    </Pressable>
+  );
+}
+
 function BlockchainWalletCard({
   wallet,
   isExpanded,
@@ -895,6 +967,10 @@ function BlockchainWalletCard({
   const pnlUsd = walletPnl ? walletPnl.usdNow - walletPnl.usdThen : 0;
   const pnlPct = walletPnl && walletPnl.usdThen > 0 ? (pnlUsd / walletPnl.usdThen) * 100 : 0;
   const pnlPositive = pnlUsd >= 0;
+  // v1.1.0 — شبکه‌هایی که آدرس اختصاصی خودشان را دارند (برای کپی تک‌تک)
+  const perNetEntries = Object.entries(wallet.networkAddresses ?? {}).filter(
+    ([, v]) => typeof v === 'string' && v.trim().length > 0
+  ) as [BlockchainNetwork, string][];
 
   return (
     <View style={styles.walletCard}>
@@ -903,9 +979,12 @@ function BlockchainWalletCard({
           <Text style={[styles.walletAvatarText, { color: meta.color }]}>{meta.short}</Text>
         </View>
         <View style={styles.walletNameCol}>
-          <Text style={styles.walletName} numberOfLines={1}>
-            {wallet.name}
-          </Text>
+          <View style={styles.walletNameRow}>
+            <Text style={styles.walletName} numberOfLines={1}>
+              {wallet.name}
+            </Text>
+            <CopyAddressButton value={addressForNetwork(wallet, wallet.networks[0] ?? 'ethereum')} />
+          </View>
           <Text style={styles.walletAddress}>{shortAddress(wallet.address)}</Text>
           <View style={styles.walletNetChips}>
             {wallet.networks.slice(0, 4).map((n) => (
@@ -979,6 +1058,35 @@ function BlockchainWalletCard({
 
       {isExpanded && (
         <View style={styles.walletBody}>
+          {/* ── v1.1.0 — کادر آدرس کامل + کپی (آدرس پایه + تک‌تک آدرس‌های اختصاصی) ── */}
+          <View style={styles.addressBox}>
+            <View style={styles.addressBoxHead}>
+              <Text style={styles.addressBoxLabel}>آدرس کیف پول</Text>
+              <CopyAddressButton value={wallet.address || addressForNetwork(wallet, wallet.networks[0] ?? 'ethereum')} withLabel />
+            </View>
+            <Text style={styles.addressBoxValue} selectable>
+              {wallet.address || '—'}
+            </Text>
+            {perNetEntries.length > 0 && (
+              <View style={styles.perNetCopyList}>
+                <Text style={styles.perNetCopyTitle}>آدرس‌های اختصاصی شبکه‌ها:</Text>
+                {perNetEntries.map(([net, addr]) => (
+                  <View key={net} style={styles.perNetCopyRow}>
+                    <View style={[styles.perNetCopyChip, { backgroundColor: NETWORKS[net].color + '26' }]}>
+                      <Text style={[styles.perNetCopyChipText, { color: NETWORKS[net].color }]}>
+                        {NETWORKS[net].short}
+                      </Text>
+                    </View>
+                    <Text style={styles.perNetCopyAddr} numberOfLines={1} selectable>
+                      {addr}
+                    </Text>
+                    <CopyAddressButton value={addr} size={12} />
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+
           <View style={styles.networkBadgeRow}>
             <Text style={styles.networkBadge}>
               {wallet.networks.length.toLocaleString('fa-IR')} شبکه:{' '}
@@ -1007,58 +1115,84 @@ function BlockchainWalletCard({
 
           {data?.tokens.map((t) => {
             const tokenPnl = walletPnl?.tokens.find((x) => x.label === t.symbol);
+            // v1.2.0 — درصد رشد همان تایم‌فریم برای تک‌تک دارایی‌ها (pnl ÷ basis)
+            const tokenPnlPct =
+              tokenPnl && tokenPnl.basis > 0 ? (tokenPnl.pnl / tokenPnl.basis) * 100 : null;
+            const netMeta = t.network ? NETWORKS[t.network] : null;
+            const showNet = !!netMeta && wallet.networks.length > 1;
             return (
               <View key={`${t.symbol}-${t.name}`} style={styles.tokenRow}>
-                <View style={[styles.tokenIcon, { backgroundColor: (t.network ? NETWORKS[t.network].color : meta.color) + '26' }]}>
-                  <Text
-                    style={[
-                      styles.tokenIconText,
-                      { color: t.network ? NETWORKS[t.network].color : meta.color },
-                    ]}
-                  >
-                    {t.symbol.slice(0, 1)}
-                  </Text>
+                {/* راست: آیکون واقعی ارز + نشان کوچک شبکه روی گوشه آیکون */}
+                <View style={styles.tokenIconWrap}>
+                  {t.icon ? (
+                    <Image source={{ uri: t.icon }} style={styles.tokenIconImg} />
+                  ) : (
+                    <View
+                      style={[
+                        styles.tokenIcon,
+                        {
+                          backgroundColor: (t.network
+                            ? NETWORKS[t.network].color
+                            : meta.color) + '26',
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.tokenIconText,
+                          { color: t.network ? NETWORKS[t.network].color : meta.color },
+                        ]}
+                      >
+                        {t.symbol.slice(0, 1)}
+                      </Text>
+                    </View>
+                  )}
+                  {showNet && netMeta && (
+                    <View style={[styles.tokenNetBadge, { backgroundColor: netMeta.color }]}>
+                      <Text style={styles.tokenNetBadgeText} numberOfLines={1}>
+                        {netMeta.short.slice(0, 4)}
+                      </Text>
+                    </View>
+                  )}
                 </View>
+                {/* نام ارز (سمت راست) + شبکه داخل پرانتز جلوش */}
                 <View style={styles.tokenMain}>
-                  <Text style={styles.tokenSymbol}>
+                  <Text style={styles.tokenSymbol} numberOfLines={1}>
                     {t.symbol}
-                    {t.network && wallet.networks.length > 1 ? (
-                      <Text style={styles.tokenNetTag}> ({NETWORKS[t.network].short})</Text>
+                    {showNet && netMeta ? (
+                      <Text style={styles.tokenNetTag}> ({netMeta.short})</Text>
                     ) : null}
                   </Text>
                   <Text style={styles.tokenName} numberOfLines={1}>
                     {t.name}
                   </Text>
-                  {tokenPnl && (
+                </View>
+                {/* وسط: تعداد دارایی + زیرش درصد رشد همان تایم‌فریم */}
+                <View style={styles.tokenQtyCol}>
+                  <Text style={styles.tokenQty}>
+                    {t.qty.toLocaleString('en-US', {
+                      maximumFractionDigits: t.qty < 1 ? 8 : 4,
+                    })}
+                  </Text>
+                  {tokenPnlPct !== null ? (
                     <Text
                       style={[
-                        styles.tokenPnl,
-                        { color: tokenPnl.pnl >= 0 ? colors.dark.green : colors.dark.red },
+                        styles.tokenGrowth,
+                        { color: tokenPnl!.pnl >= 0 ? colors.dark.green : colors.dark.red },
                       ]}
                     >
-                      {PNL_PERIOD_LABEL[pnlPeriod]}: {tokenPnl.pnl >= 0 ? '+' : '−'} $
-                      {Math.abs(tokenPnl.pnl).toLocaleString('en-US', {
-                        maximumFractionDigits: 2,
-                      })}
+                      {tokenPnl!.pnl >= 0 ? '▲' : '▼'}{' '}
+                      {Math.abs(tokenPnlPct).toLocaleString('fa-IR', {
+                        maximumFractionDigits: 1,
+                      })}٪
                     </Text>
-                  )}
-                </View>
-                <Text style={styles.tokenQty}>
-                  {t.qty.toLocaleString('en-US', {
-                    maximumFractionDigits: t.qty < 1 ? 8 : 4,
-                  })}
-                </Text>
-                <View style={styles.tokenValueCol}>
-                  <Text style={styles.tokenValue}>
-                    {t.priceUsd > 0
-                      ? `$${t.valueUsd.toLocaleString('en-US', { maximumFractionDigits: 2 })}`
-                      : 'قیمت نامشخص'}
-                  </Text>
-                  {t.change24hPct !== null && t.change24hPct !== undefined && (
+                  ) : t.change24hPct !== null && t.change24hPct !== undefined ? (
                     <Text
                       style={[
-                        styles.tokenChange,
-                        { color: (t.change24hPct ?? 0) >= 0 ? colors.dark.green : colors.dark.red },
+                        styles.tokenGrowth,
+                        {
+                          color: (t.change24hPct ?? 0) >= 0 ? colors.dark.green : colors.dark.red,
+                        },
                       ]}
                     >
                       {(t.change24hPct ?? 0) >= 0 ? '▲' : '▼'}{' '}
@@ -1066,7 +1200,34 @@ function BlockchainWalletCard({
                         maximumFractionDigits: 2,
                       })}٪
                     </Text>
-                  )}
+                  ) : null}
+                </View>
+                {/* چپ: ارزش کل + زیرش سود/زیان دلاری ($ و درصد همان تایم‌فریم) */}
+                <View style={styles.tokenValueCol}>
+                  <Text style={styles.tokenValue}>
+                    {t.priceUsd > 0
+                      ? `$${t.valueUsd.toLocaleString('en-US', { maximumFractionDigits: 2 })}`
+                      : 'قیمت نامشخص'}
+                  </Text>
+                  {tokenPnl ? (
+                    <Text
+                      style={[
+                        styles.tokenPnlPct,
+                        { color: tokenPnl.pnl >= 0 ? colors.dark.green : colors.dark.red },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {tokenPnl.pnl >= 0 ? '+' : '−'}$
+                      {Math.abs(tokenPnl.pnl).toLocaleString('en-US', {
+                        maximumFractionDigits: 2,
+                      })}
+                      {tokenPnlPct !== null
+                        ? ` (${Math.abs(tokenPnlPct).toLocaleString('fa-IR', {
+                            maximumFractionDigits: 1,
+                          })}٪)`
+                        : ''}
+                    </Text>
+                  ) : null}
                 </View>
               </View>
             );
@@ -1606,6 +1767,81 @@ const styles = createThemedStyles(() =>
       flex: 1,
       gap: 2,
     },
+    walletNameRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    copyBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      paddingHorizontal: 5,
+      paddingVertical: 3,
+      borderRadius: 6,
+      backgroundColor: colors.dark.accentDim,
+    },
+    copyBtnText: {
+      fontSize: 10,
+      fontWeight: '700' as const,
+      color: colors.dark.accent,
+    },
+    addressBox: {
+      backgroundColor: colors.dark.card,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.dark.cardBorder,
+      padding: 10,
+      marginBottom: 10,
+    },
+    addressBoxHead: {
+      flexDirection: 'row-reverse',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 6,
+    },
+    addressBoxLabel: {
+      fontSize: 11,
+      fontWeight: '700' as const,
+      color: colors.dark.textSecondary,
+    },
+    addressBoxValue: {
+      fontSize: 11,
+      fontFamily: 'monospace' as const,
+      color: colors.dark.text,
+      lineHeight: 17,
+      textAlign: 'left',
+    },
+    perNetCopyList: {
+      marginTop: 10,
+      gap: 6,
+    },
+    perNetCopyTitle: {
+      fontSize: 10,
+      color: colors.dark.textMuted,
+      textAlign: 'right',
+    },
+    perNetCopyRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    perNetCopyChip: {
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 6,
+    },
+    perNetCopyChipText: {
+      fontSize: 9,
+      fontWeight: '800' as const,
+    },
+    perNetCopyAddr: {
+      flex: 1,
+      fontSize: 10,
+      fontFamily: 'monospace' as const,
+      color: colors.dark.textSecondary,
+      textAlign: 'left',
+    },
     walletName: {
       fontSize: 13,
       fontWeight: '700' as const,
@@ -1710,6 +1946,36 @@ const styles = createThemedStyles(() =>
       borderBottomWidth: 1,
       borderBottomColor: colors.dark.border + '66',
     },
+    // v1.2.0 — آیکون واقعی ارز + نشان شبکه روی گوشهٔ آن
+    tokenIconWrap: {
+      width: 34,
+      height: 34,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    tokenIconImg: {
+      width: 30,
+      height: 30,
+      borderRadius: 15,
+    },
+    tokenNetBadge: {
+      position: 'absolute',
+      bottom: -2,
+      left: -2,
+      minWidth: 15,
+      paddingHorizontal: 3,
+      height: 12,
+      borderRadius: 6,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 1.5,
+      borderColor: colors.dark.surface,
+    },
+    tokenNetBadgeText: {
+      fontSize: 6.5,
+      fontWeight: '800' as const,
+      color: '#FFFFFF',
+    },
     tokenIcon: {
       width: 30,
       height: 30,
@@ -1745,8 +2011,21 @@ const styles = createThemedStyles(() =>
     tokenQty: {
       fontSize: 10,
       color: colors.dark.textSecondary,
-      minWidth: 60,
-      textAlign: 'left',
+      textAlign: 'center',
+    },
+    // v1.2.0 — ستون وسط: تعداد + درصد رشد تایم‌فریم زیرش
+    tokenQtyCol: {
+      alignItems: 'center',
+      minWidth: 64,
+      gap: 1,
+    },
+    tokenGrowth: {
+      fontSize: 9,
+      fontWeight: '700' as const,
+    },
+    tokenPnlPct: {
+      fontSize: 9,
+      fontWeight: '700' as const,
     },
     tokenValueCol: {
       alignItems: 'flex-end',

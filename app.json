@@ -2,7 +2,7 @@
   "expo": {
     "name": "مدیریت دارایی",
     "slug": "asset-management",
-    "version": "1.0.0",
+    "version": "1.2.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "assetmanagement",
@@ -23,7 +23,7 @@
         "backgroundColor": "#112624"
       },
       "package": "com.pampi.assetmanagement",
-      "versionCode": 1,
+      "versionCode": 3,
       "permissions": [
         "android.permission.INTERNET"
       ]

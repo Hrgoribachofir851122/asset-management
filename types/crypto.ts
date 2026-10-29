@@ -129,6 +129,11 @@ export interface AppSettings {
   themeMode?: 'dark' | 'light';
   /** Home-scanner auto mode — persisted so it survives app restarts. */
   autoScanEnabled?: boolean;
+  /**
+   * v1.2.0 — ریپوی GitHub برای «چک کردن بروزرسانی» (به شکل owner/repo).
+   * خالی = بررسی غیرفعال. کاربر ریپوی خودش را یک بار در تنظیمات وارد می‌کند.
+   */
+  githubRepo?: string;
 }
 
 /** All GainzAlgo-supported scan timeframes. */

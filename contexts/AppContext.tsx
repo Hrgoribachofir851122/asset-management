@@ -64,6 +64,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   telegramEnabled: false,
   themeMode: 'dark' as ThemeMode,
   autoScanEnabled: false,
+  // v1.2.0 — ریپوی GitHub برای چک بروزرسانی (در تنظیمات وارد می‌شود)
+  githubRepo: '',
 };
 
 async function loadSettings(): Promise<AppSettings> {
