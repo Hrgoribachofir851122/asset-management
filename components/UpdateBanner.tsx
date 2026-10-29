@@ -5,8 +5,11 @@
  * بده ورژن جدید با چه تغییراتی موجوده که با زدن دکمه دانلود همون مستقیما
  * بره برا دانلود»
  *
- * • روی ریپوی GitHub که کاربر در تنظیمات وارد می‌کند (owner/repo)، جدیدترین
- *   Release خوانده می‌شود (از طریق پروکسی سرور — از ایران هم جواب می‌دهد).
+ * • v1.3.0 — ریپو لازم نیست در تنظیمات وارد شود: DEFAULT_GITHUB_REPO داخل
+ *   برنامه است (constants/appInfo.ts) و جدیدترین Release آن خوانده می‌شود
+ *   (از طریق پروکسی سرور — از ایران هم جواب می‌دهد). چکِ خودکار هنگام باز شدن
+ *   برنامه + هر ۳۰ دقیقه؛ و هر جا دکمهٔ «چک بروزرسانی» بزند، همان لحظه بنر
+ *   بالا می‌آید (کانال notify در updateChecker).
  * • اگر نسخهٔ Release از نسخهٔ نصب‌شده بزرگ‌تر باشد، این بنر بالای همهٔ صفحات
  *   ظاهر می‌شود؛ توضیحات Release (changelog) همان پیامِ بالای صفحه است.
  * • دکمهٔ «دانلود نسخه جدید» فایل APK پیوست همان Release را مستقیم باز می‌کند
@@ -21,8 +24,12 @@ import { Download, RefreshCw, X, Sparkles } from 'lucide-react-native';
 import colors from '@/constants/colors';
 import { createThemedStyles } from '@/utils/themeStyles';
 import { useApp } from '@/contexts/AppContext';
-import { APP_VERSION } from '@/constants/appInfo';
-import { checkForUpdate, type UpdateInfo } from '@/utils/updateChecker';
+import { APP_VERSION, DEFAULT_GITHUB_REPO } from '@/constants/appInfo';
+import {
+  checkForUpdate,
+  onUpdateAvailable,
+  type UpdateInfo,
+} from '@/utils/updateChecker';
 
 const DISMISS_KEY = '@update_banner_dismissed_version';
 /** سکوت بین بررسی‌های خودکار (۶ ساعت) — دکمهٔ دستی همیشه فورس می‌کند. */
@@ -35,7 +42,9 @@ export default function UpdateBanner() {
   const [checking, setChecking] = useState(false);
   const lastAutoCheckRef = useRef(0);
 
-  const repo = (settings.githubRepo ?? '').trim();
+  // v1.3.0 — ریپو از قبل داخل برنامه است (DEFAULT_GITHUB_REPO)؛ تنظیماتِ
+  // کاربر فقط override است. «کاربر نخواد هربار دستی در تنظیمات واردش کند».
+  const repo = (settings.githubRepo ?? '').trim() || DEFAULT_GITHUB_REPO;
 
   const runCheck = useCallback(
     async (force: boolean) => {
@@ -76,7 +85,22 @@ export default function UpdateBanner() {
     return () => clearInterval(timer);
   }, [runCheck]);
 
-  if (!update || !update.available || dismissed || !repo) return null;
+  // v1.3.0 — وقتی جای دیگری (دکمهٔ «چک بروزرسانی» تنظیمات) نسخهٔ جدیدی پیدا
+  // شد، بنر همان لحظه نشان داده شود — نه ۳۰ دقیقه بعد.
+  useEffect(() => {
+    return onUpdateAvailable((info) => {
+      if (!info.available) return;
+      setUpdate(info);
+      AsyncStorage.getItem(DISMISS_KEY)
+        .then((d) => {
+          if (d === info.latestVersion) setDismissed(true);
+          else setDismissed(false);
+        })
+        .catch(() => setDismissed(false));
+    });
+  }, []);
+
+  if (!update || !update.available || dismissed) return null;
 
   const download = () => {
     const url = update.apkUrl || update.releaseUrl;

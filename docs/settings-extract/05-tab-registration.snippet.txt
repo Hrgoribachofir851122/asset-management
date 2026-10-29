@@ -1,0 +1,28 @@
+# ══════════════════════════════════════════════════════════════════
+# نقلِ مستقیم (EXTRACT) — بدون هیچ تغییری
+# منبع: app/(tabs)/_layout.tsx — خطوط 97 تا 115
+# پروژه: پامپی (pampay-coin-alert-github) نسخه 1.5.12
+# توضیح: نحوه ثبت تب «مدیریت دارایی» در نوار پایین برنامه (expo-router Tabs) — آیکون Wallet از lucide-react-native در خط 2 ایمپورت شده است
+# کد اصلی برنامه پامپی دست‌نخورده مانده است؛ این فایل فقط برای
+# مرجع/ساخت اپ مستقل «مدیریت دارایی» ضمیمه شده است.
+# ══════════════════════════════════════════════════════════════════
+
+      {/* Under RTL (Persian devices) the FIRST declared tab renders at the
+          far RIGHT — so this declaration order produces, right → left:
+
+          تنظیمات ← مدیریت دارایی ← ترید با AI ← اندیکاتورها ← ردیابی نهنگ‌ها
+          ← قبل از پامپ ← شورت میم‌کوین‌ها ← اسکنر دامپ و پامپ                */}
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: 'تنظیمات',
+          tabBarIcon: ({ color, size }) => <Settings size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="wallet"
+        options={{
+          title: 'مدیریت دارایی',
+          tabBarIcon: ({ color, size }) => <Wallet size={size} color={color} />,
+        }}
+      />

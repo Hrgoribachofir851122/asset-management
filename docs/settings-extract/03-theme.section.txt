@@ -1,0 +1,59 @@
+# ══════════════════════════════════════════════════════════════════
+# نقلِ مستقیم (EXTRACT) — بدون هیچ تغییری
+# منبع: app/(tabs)/settings/index.tsx — خطوط 713 تا 762
+# پروژه: پامپی (pampay-coin-alert-github) نسخه 1.5.12
+# توضیح: بخش «ظاهر برنامه» — انتخاب تم روشن/تیره (روی مدیریت دارایی هم اعمال می‌شود)
+# کد اصلی برنامه پامپی دست‌نخورده مانده است؛ این فایل فقط برای
+# مرجع/ساخت اپ مستقل «مدیریت دارایی» ضمیمه شده است.
+# ══════════════════════════════════════════════════════════════════
+
+      {/* ── ظاهر برنامه (تم دارک/روشن) ─────────────────── */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionIcon}>{themeMode === 'light' ? '☀️' : '🌙'}</Text>
+          <Text style={styles.sectionTitle}>ظاهر برنامه</Text>
+        </View>
+        <View style={styles.themeRow}>
+          <Pressable
+            style={({ pressed }) => [
+              styles.themeOption,
+              themeMode === 'light' && styles.themeOptionActive,
+              pressed && { opacity: 0.85 },
+            ]}
+            onPress={() => setAppThemeMode('light')}
+            testID="theme-light-btn"
+          >
+            <Sun size={18} color={themeMode === 'light' ? colors.dark.background : colors.dark.textSecondary} />
+            <Text
+              style={[
+                styles.themeOptionText,
+                themeMode === 'light' && styles.themeOptionTextActive,
+              ]}
+            >
+              روشن
+            </Text>
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [
+              styles.themeOption,
+              themeMode === 'dark' && styles.themeOptionActive,
+              pressed && { opacity: 0.85 },
+            ]}
+            onPress={() => setAppThemeMode('dark')}
+            testID="theme-dark-btn"
+          >
+            <Moon size={18} color={themeMode === 'dark' ? colors.dark.background : colors.dark.textSecondary} />
+            <Text
+              style={[
+                styles.themeOptionText,
+                themeMode === 'dark' && styles.themeOptionTextActive,
+              ]}
+            >
+              تیره
+            </Text>
+          </Pressable>
+        </View>
+        <Text style={styles.hintText}>
+          تم انتخابی بلافاصله روی کل برنامه اعمال و ذخیره می‌شود.
+        </Text>
+      </View>

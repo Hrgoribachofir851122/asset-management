@@ -480,6 +480,228 @@ async function handleCgIcons(res, query) {
 }
 
 
+// ─── v1.3.0 — پروکسی خواندن بلاکچین: تون (Tonkeeper) و فایل‌کوین ─────────
+// «در کیف پول وقتی آدرس کیف رو شبکه تون کوین میدم نمیتونه اطلاعات بخونه» +
+// «آدرس فایل‌کوین رو نمیتونه بخونه» — tonapi.io/toncenter/glif روی IPهای
+// اشتراکی (فیلترشکن‌ها) محدود می‌شوند. این دو endpoint سمت سرور (IP دیتاسنتر
+// پایدار) زنجیرهٔ چندمنبعی را اجرا می‌کنند و جواب نرمال‌شده برمی‌گردانند.
+// فقط خواندنی؛ آدرس عمومی است و هیچ کلیدی رد و بدل نمی‌شود. کش ۲۰ ثانیه.
+
+const BC_TIMEOUT_MS = 9_000;
+const BC_CACHE_MS = 20_000;
+const bcCache = new Map(); // key → { at, payload }
+
+async function bcFetchJson(url, opts = {}, ms = BC_TIMEOUT_MS) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  try {
+    const r = await fetch(url, {
+      ...opts,
+      signal: ctrl.signal,
+      headers: { Accept: 'application/json', 'User-Agent': 'asset-management-server', ...(opts.headers || {}) },
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return await r.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function bcPostRpc(rpcUrl, method, params, ms = BC_TIMEOUT_MS) {
+  return bcFetchJson(
+    rpcUrl,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+    },
+    ms
+  );
+}
+
+function bcCached(key, fn) {
+  return (async () => {
+    const hit = bcCache.get(key);
+    if (hit && Date.now() - hit.at < BC_CACHE_MS) return hit.payload;
+    try {
+      const payload = await fn();
+      bcCache.set(key, { at: Date.now(), payload });
+      return payload;
+    } catch (e) {
+      return { ok: false, error: String((e && e.message) || e) };
+    }
+  })();
+}
+
+/** TON: tonapi → toncenter v3 → toncenter v2 (موجودی native + جتون‌ها). */
+async function tonResolve(address) {
+  const addr = String(address || '').trim();
+  if (!addr) return { ok: false, error: 'no-address' };
+
+  let balance = null; // nanoTON (string)
+  const jettons = []; // { walletBalance, master, symbol?, name?, decimals? }
+  const sources = [];
+
+  // 1) tonapi.io — balance + jettons با متادیتا کامل
+  try {
+    const a = await bcFetchJson(`https://tonapi.io/v2/accounts/${encodeURIComponent(addr)}`);
+    if (a && a.balance != null) {
+      balance = String(a.balance);
+      sources.push('tonapi');
+    }
+    for (const j of a?.jettons?.balances || []) {
+      const wb = String(j.balance ?? '0');
+      if (wb === '0') continue;
+      jettons.push({
+        walletBalance: wb,
+        master: j.jetton?.address || '',
+        symbol: j.jetton?.symbol || undefined,
+        name: j.jetton?.name || undefined,
+        decimals: j.jetton?.decimals != null ? String(j.jetton.decimals) : undefined,
+      });
+    }
+  } catch {}
+
+  // 2) toncenter v3 — addressInformation + jetton/wallets
+  if (balance == null) {
+    try {
+      const d = await bcFetchJson(
+        `https://toncenter.com/api/v3/addressInformation?address=${encodeURIComponent(addr)}`
+      );
+      if (d && d.balance != null) {
+        balance = String(d.balance);
+        sources.push('toncenter-v3');
+      }
+    } catch {}
+  }
+  if (jettons.length === 0) {
+    try {
+      const w = await bcFetchJson(
+        `https://toncenter.com/api/v3/jetton/wallets?owner_address=${encodeURIComponent(addr)}`
+      );
+      const rows = w?.jetton_wallets || [];
+      // متادیتا (نماد/اعشار) هر جتون — موازی، حداکثر ۸ تا
+      const metas = await Promise.all(
+        rows.slice(0, 8).map(async (row) => {
+          if (!row?.jetton) return null;
+          try {
+            const m = await bcFetchJson(
+              `https://toncenter.com/api/v3/jetton/masters?addresses=${encodeURIComponent(row.jetton)}`
+            );
+            const c = m?.jetton_masters?.[0]?.jetton_content;
+            const uri = typeof c?.uri === 'string' ? c.uri : '';
+            // نشانی IPFS → اپ کلاینت خودش نماد را کامل می‌کند؛ اینجا فقط
+            // symbol/decimals مستقیم (بعضی masterها داخل content می‌دهند)
+            return {
+              master: row.jetton,
+              walletBalance: String(row.balance ?? '0'),
+              symbol: c?.symbol || undefined,
+              decimals: c?.decimals != null ? String(c.decimals) : undefined,
+              name: c?.name || undefined,
+              uri,
+            };
+          } catch {
+            return { master: row.jetton, walletBalance: String(row.balance ?? '0') };
+          }
+        })
+      );
+      for (const m of metas) if (m && m.walletBalance !== '0') jettons.push(m);
+      if (jettons.length > 0 && balance == null) sources.push('toncenter-v3-jettons');
+    } catch {}
+  }
+
+  // 3) toncenter v2 — آخرین فال‌بک native balance
+  if (balance == null) {
+    try {
+      const d = await bcFetchJson(
+        `https://toncenter.com/api/v2/getExtendedAddressInformation?address=${encodeURIComponent(addr)}`
+      );
+      if (d && d.result?.balance != null) {
+        balance = String(d.result.balance);
+        sources.push('toncenter-v2');
+      }
+    } catch {}
+  }
+
+  if (balance == null && jettons.length === 0) {
+    throw new Error('ton-unavailable');
+  }
+  return { ok: true, balance, jettons, sources };
+}
+
+const FIL_RPCS = ['https://api.node.glif.io/rpc/v1', 'https://filecoin.chainup.net/rpc/v1'];
+
+/** Filecoin: StateGetActor (f1/f0/f3) یا eth_getBalance (0x/FEVM) + تبدیل به فرم EVM. */
+async function filResolve(address) {
+  const addr = String(address || '').trim();
+  if (!addr) return { ok: false, error: 'no-address' };
+
+  let atto = null;
+  let evmAddress = null;
+  const sources = [];
+
+  const isEvmForm = /^0x[0-9a-fA-F]{40}$/.test(addr);
+
+  for (const rpc of FIL_RPCS) {
+    try {
+      if (isEvmForm) {
+        const d = await bcPostRpc(rpc, 'eth_getBalance', [addr, 'latest']);
+        if (d?.result != null) {
+          atto = String(BigInt(d.result));
+          sources.push(`eth_getBalance@${new URL(rpc).host}`);
+          evmAddress = addr.toLowerCase();
+          break;
+        }
+      } else {
+        const d = await bcPostRpc(rpc, 'Filecoin.StateGetActor', [addr, null]);
+        if (d?.result?.Balance != null) {
+          atto = String(d.result.Balance);
+          sources.push(`StateGetActor@${new URL(rpc).host}`);
+          break;
+        }
+      }
+    } catch {}
+  }
+
+  // تبدیل f1/f3 → ID → فرم FEVM (برای خواندن توکن‌های ERC-20 سمت اپ)
+  if (!isEvmForm && /^f[134]/.test(addr)) {
+    for (const rpc of FIL_RPCS) {
+      try {
+        const d = await bcPostRpc(rpc, 'Filecoin.StateLookupID', [addr, null]);
+        const id = /^f0(\d+)$/.exec(String(d?.result || ''));
+        if (id) {
+          evmAddress = '0x' + BigInt(id[1]).toString(16).padStart(40, '0');
+          break;
+        }
+      } catch {}
+    }
+  } else if (isEvmForm) {
+    try {
+      const d = await bcPostRpc(FIL_RPCS[0], 'Filecoin.StateLookupID', [addr, null]);
+      const id = /^f0(\d+)$/.exec(String(d?.result || ''));
+      if (id) evmAddress = addr.toLowerCase();
+    } catch {}
+  }
+
+  if (atto == null) throw new Error('filecoin-unavailable');
+  return { ok: true, atto, evmAddress, sources };
+}
+
+async function handleBcTon(res, query) {
+  const address = String(query.get('address') || '').trim();
+  if (!address) return sendJson(res, 400, { ok: false, error: 'address required' });
+  const payload = await bcCached(`ton|${address.toLowerCase()}`, () => tonResolve(address));
+  return sendJson(res, 200, payload);
+}
+
+async function handleBcFil(res, query) {
+  const address = String(query.get('address') || '').trim();
+  if (!address) return sendJson(res, 400, { ok: false, error: 'address required' });
+  const payload = await bcCached(`fil|${address.toLowerCase()}`, () => filResolve(address));
+  return sendJson(res, 200, payload);
+}
+
+
 const server = http.createServer(async (req, res) => {
   const urlPath = (req.url || '/').split('?')[0].split('#')[0];
 
@@ -501,6 +723,9 @@ const server = http.createServer(async (req, res) => {
   if (urlPath === '/ip-check') return handleIpCheck(req, res);
   if (urlPath === '/github-release') return handleGithubRelease(req, res, new URL(req.url, 'http://x').searchParams);
   if (urlPath === '/cg-icons') return handleCgIcons(res, new URL(req.url, 'http://x').searchParams);
+  // v1.3.0 — پروکسی خواندن بلاکچین (تون / فایل‌کوین)
+  if (urlPath === '/bc/ton') return handleBcTon(res, new URL(req.url, 'http://x').searchParams);
+  if (urlPath === '/bc/filecoin') return handleBcFil(res, new URL(req.url, 'http://x').searchParams);
 
   if (urlPath === '/health' || urlPath === '/api/health') {
     const hasDist = fs.existsSync(path.join(DIST, 'index.html'));
@@ -508,7 +733,7 @@ const server = http.createServer(async (req, res) => {
       status: 'ok',
       service: 'asset-management web + price proxy',
       web: hasDist ? 'ready' : 'dist missing (run: npx expo export --platform web)',
-      endpoints: ['/nobitex/usdt-toman', '/alanchand/usdt-toman', '/ip-check', '/github-release', '/cg-icons'],
+      endpoints: ['/nobitex/usdt-toman', '/alanchand/usdt-toman', '/ip-check', '/github-release', '/cg-icons', '/bc/ton', '/bc/filecoin'],
     });
   }
 

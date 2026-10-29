@@ -1058,7 +1058,12 @@ function BlockchainWalletCard({
 
       {isExpanded && (
         <View style={styles.walletBody}>
-          {/* ── v1.1.0 — کادر آدرس کامل + کپی (آدرس پایه + تک‌تک آدرس‌های اختصاصی) ── */}
+          {/* ── v1.1.0 — کادر آدرس کامل + کپی (آدرس پایه + تک‌تک آدرس‌های اختصاصی)
+              v1.3.0 — «بتونم ادرسهای شبکه های دیگه رو این کیف پول را هم کپی
+              کنم مثل شبکه اتریوم»: زیر آدرس پایه، برچسب «آدرس مشترک شبکه‌های
+              EVM» می‌آید تا معلوم باشد همین 0x آدرسِ اتریوم (و BSC و…) است و
+              با دکمهٔ کنارش کپی می‌شود؛ آدرس اختصاصی هر شبکهٔ مستقل (تون،
+              فایل‌کوین، سولانا…) هم ردیف کپی خودش را دارد. ── */}
           <View style={styles.addressBox}>
             <View style={styles.addressBoxHead}>
               <Text style={styles.addressBoxLabel}>آدرس کیف پول</Text>
@@ -1067,6 +1072,18 @@ function BlockchainWalletCard({
             <Text style={styles.addressBoxValue} selectable>
               {wallet.address || '—'}
             </Text>
+            {(() => {
+              const evmSelected = wallet.networks.filter((n) => isEvmNetwork(n));
+              if (evmSelected.length === 0) return null;
+              const names = evmSelected.slice(0, 5).map((n) => NETWORKS[n].label).join('، ');
+              return (
+                <Text style={styles.addressBoxEvmHint}>
+                  همین آدرس، آدرس شبکه‌های {names}
+                  {evmSelected.length > 5 ? ' و…' : ''} هم است — همهٔ شبکه‌های EVM آدرس مشترک دارند
+                  و با همان دکمهٔ کپی بالا برمی‌دارید
+                </Text>
+              );
+            })()}
             {perNetEntries.length > 0 && (
               <View style={styles.perNetCopyList}>
                 <Text style={styles.perNetCopyTitle}>آدرس‌های اختصاصی شبکه‌ها:</Text>
@@ -1155,7 +1172,10 @@ function BlockchainWalletCard({
                     </View>
                   )}
                 </View>
-                {/* نام ارز (سمت راست) + شبکه داخل پرانتز جلوش */}
+                {/* نام ارز (سمت راست) + شبکه داخل پرانتز جلوش
+                    v1.3.0 — «نام ارزها در ستون اول به سمت مخالف همین ستون
+                    می‌روند چون چپ‌چین‌اند؛ راست‌چین شوند» — نمادهای لاتین
+                    (ETH/USDT) بدون textAlign راست‌چین نمی‌شدند. */}
                 <View style={styles.tokenMain}>
                   <Text style={styles.tokenSymbol} numberOfLines={1}>
                     {t.symbol}
@@ -1202,7 +1222,10 @@ function BlockchainWalletCard({
                     </Text>
                   ) : null}
                 </View>
-                {/* چپ: ارزش کل + زیرش سود/زیان دلاری ($ و درصد همان تایم‌فریم) */}
+                {/* چپ: ارزش کل + زیرش سود/زیان دلاری همان تایم‌فریم
+                    v1.3.0 — «زیر قیمت هر دارایی فقط مقدار سودوزیان دلاری را
+                    نشون بده در هر تایم فریمی که انتخاب میشه» — دیگر درصد
+                    داخل پرانتز نشان داده نمی‌شود؛ فقط $ +/- */}
                 <View style={styles.tokenValueCol}>
                   <Text style={styles.tokenValue}>
                     {t.priceUsd > 0
@@ -1221,11 +1244,6 @@ function BlockchainWalletCard({
                       {Math.abs(tokenPnl.pnl).toLocaleString('en-US', {
                         maximumFractionDigits: 2,
                       })}
-                      {tokenPnlPct !== null
-                        ? ` (${Math.abs(tokenPnlPct).toLocaleString('fa-IR', {
-                            maximumFractionDigits: 1,
-                          })}٪)`
-                        : ''}
                     </Text>
                   ) : null}
                 </View>
@@ -1812,6 +1830,14 @@ const styles = createThemedStyles(() =>
       lineHeight: 17,
       textAlign: 'left',
     },
+    // v1.3.0 — برچسب «این همان آدرس اتریوم/شبکه‌های EVM است»
+    addressBoxEvmHint: {
+      fontSize: 9.5,
+      lineHeight: 15,
+      color: colors.dark.textMuted,
+      textAlign: 'right',
+      marginTop: 5,
+    },
     perNetCopyList: {
       marginTop: 10,
       gap: 6,
@@ -1995,6 +2021,8 @@ const styles = createThemedStyles(() =>
       fontSize: 11.5,
       fontWeight: '800' as const,
       color: colors.dark.text,
+      // v1.3.0 — نماد لاتین (ETH/USDT…) چپ‌چین نمی‌ماند؛ به سمت راست ستون
+      textAlign: 'right',
     },
     tokenNetTag: {
       fontSize: 8.5,
@@ -2003,6 +2031,8 @@ const styles = createThemedStyles(() =>
     tokenName: {
       fontSize: 9,
       color: colors.dark.textMuted,
+      // v1.3.0 — همراستا با نماد، راست‌چین
+      textAlign: 'right',
     },
     tokenPnl: {
       fontSize: 9,

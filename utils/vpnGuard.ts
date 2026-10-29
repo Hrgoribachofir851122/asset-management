@@ -22,9 +22,19 @@
  *   • per-provider timeout dropped 5s → 2.5s so a check fits one poll cycle
  *   • the non-forced cache is 3s (was 2min) so banners/other consumers
  *     follow a VPN toggle almost instantly without extra traffic.
+ *
+ * v1.1.0 (asset-management) — «ای‌پی‌های تحریم هم غیرفعال باشن مانند ایران»:
+ *   • SANCTIONED_COUNTRIES — تحریمی‌های کامل OFAC (ایران، کوبا، کرهٔ شمالی،
+ *     سوریه). کشورِ هر یک → status = 'iran' (یعنی «بدون فیلترشکن/تحریمی») —
+ *     گیت کیف پول/صرافی همان رفتار قبلی را برای همهٔ این کشورها دارد.
+ *   • provider چهارم: /ip-check روی سرور خودمان (asset-management1…) —
+ *     وقتی سه سرویس عمومی از دسترس خارج بودند، سرور خودمان کشورِ IP را
+ *     برمی‌گرداند؛ (server.js همان endpoint را سمت Railway سرو می‌کند).
  */
 
 export type VpnStatus = 'vpn' | 'iran' | 'unknown';
+
+import { getServerUrl } from './scanServerApi';
 
 interface GeoProvider {
   name: string;
@@ -52,7 +62,28 @@ const PROVIDERS: GeoProvider[] = [
     url: 'https://ipapi.co/json/',
     extract: (d) => (typeof (d as { country_code?: unknown })?.country_code === 'string' ? (d as { country_code: string }).country_code : null),
   },
+  // v1.1.0 — fallback چهارم: سرور خودمان (CORS باز دارد و از ایران هم در
+  // دسترس است). getServerUrl() همیشه آدرس درست را می‌دهد (داخلی/سفارشی/پیش‌فرض).
+  {
+    name: 'asset-server',
+    url: '__SERVER_IP_CHECK__',
+    extract: (d) =>
+      typeof (d as { country?: unknown })?.country === 'string'
+        ? (d as { country: string }).country
+        : null,
+  },
 ];
+
+/** URL واقعی provider سرور — async (getServerUrl از AsyncStorage می‌خواند). */
+async function providerUrl(p: GeoProvider): Promise<string> {
+  if (p.url !== '__SERVER_IP_CHECK__') return p.url;
+  try {
+    const base = (await getServerUrl()).replace(/\/+$/, '');
+    return `${base}/ip-check`;
+  } catch {
+    return 'https://asset-management1.up.railway.app/ip-check';
+  }
+}
 
 let cache: { at: number; status: VpnStatus } | null = null;
 const CACHE_MS = 3_000;
@@ -86,12 +117,28 @@ async function fetchWithTimeout(url: string, ms: number): Promise<unknown | null
   }
 }
 
+/**
+ * v1.1.0 — کشورهای تحریمیِ کامل (OFAC) که برای دو بخش «کیف پول بلاکچین» و
+ * «صرافی‌های خارجی» باید غیرفعال باشند — مثل ایران. هر کشورِ این مجموعه
+ * → status 'iran' (بدون فیلترشکن) → همان گیت قبلی، بدون تغییر در بقیهٔ اپ.
+ */
+export const SANCTIONED_COUNTRIES = new Set(['IR', 'CU', 'KP', 'SY']);
+
+/** کشور تحریمی است؟ (برچسب‌گذاری در UI) */
+export function isSanctionedCountry(code?: string): boolean {
+  return !!code && SANCTIONED_COUNTRIES.has(code.toUpperCase());
+}
+
+function statusForCountry(code: string): VpnStatus {
+  return SANCTIONED_COUNTRIES.has(code.toUpperCase()) ? 'iran' : 'vpn';
+}
+
 async function checkOnce(): Promise<VpnStatus> {
   for (const p of providersInRotation()) {
-    const data = await fetchWithTimeout(p.url, PROVIDER_TIMEOUT_MS);
+    const data = await fetchWithTimeout(await providerUrl(p), PROVIDER_TIMEOUT_MS);
     const country = data ? p.extract(data) : null;
     if (country) {
-      return country.toUpperCase() === 'IR' ? 'iran' : 'vpn';
+      return statusForCountry(country);
     }
   }
   return 'unknown';
@@ -154,6 +201,9 @@ const COUNTRY_FA: Record<string, string> = {
   JP: 'ژاپن',
   RU: 'روسیه',
   KZ: 'قزاقستان',
+  CU: 'کوبا',
+  KP: 'کرهٔ شمالی',
+  SY: 'سوریه',
 };
 
 /** v1.4.12 — in-flight promise for the FULL info check (forced path). */
@@ -179,7 +229,7 @@ export async function getIpInfo(force = false): Promise<IpInfo> {
 
 async function getIpInfoUncached(): Promise<IpInfo> {
   for (const p of providersInRotation()) {
-    const data = (await fetchWithTimeout(p.url, PROVIDER_TIMEOUT_MS)) as Record<string, unknown> | null;
+    const data = (await fetchWithTimeout(await providerUrl(p), PROVIDER_TIMEOUT_MS)) as Record<string, unknown> | null;
     if (!data) continue;
     const ip =
       typeof data.ip === 'string'
@@ -192,7 +242,7 @@ async function getIpInfoUncached(): Promise<IpInfo> {
     if (country) {
       const code = country.toUpperCase();
       const info: IpInfo = {
-        status: code === 'IR' ? 'iran' : 'vpn',
+        status: statusForCountry(code),
         ip,
         country: code,
         countryNameFa: COUNTRY_FA[code],

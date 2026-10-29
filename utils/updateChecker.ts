@@ -142,3 +142,28 @@ export async function checkForUpdate(repo: string, currentVersion: string): Prom
     };
   }
 }
+
+// ---------------------------------------------------------------------------
+// v1.3.0 — «با زدن دکمهٔ چک کردن بروزرسانی مطلع بشه + پیغام بالای صفحه»
+// کانال کوچک pub/sub: هر جا (تنظیمات / چک خودکار) نسخهٔ جدیدی پیدا شد،
+// UpdateBannerِ بالای صفحه همان لحظه آن را نشان می‌دهد — بدون انتظار برای
+// تایمر ۳۰ دقیقه‌ای بعدی.
+// ---------------------------------------------------------------------------
+
+type UpdateListener = (info: UpdateInfo) => void;
+const updateListeners = new Set<UpdateListener>();
+
+/** وقتی نسخهٔ جدیدی پیدا شد صدا بزن — بنر بالای صفحه فوراً ظاهر می‌شود. */
+export function notifyUpdateAvailable(info: UpdateInfo): void {
+  for (const l of [...updateListeners]) {
+    try {
+      l(info);
+    } catch {}
+  }
+}
+
+/** UpdateBanner با این تابع گوش می‌دهد؛ returns unsubscribe. */
+export function onUpdateAvailable(listener: UpdateListener): () => void {
+  updateListeners.add(listener);
+  return () => updateListeners.delete(listener);
+}

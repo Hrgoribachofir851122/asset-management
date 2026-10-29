@@ -1172,6 +1172,66 @@ async function fetchTonBalances(network: BlockchainNetwork, address: string): Pr
     } catch {}
   }
 
+  // v1.3.0 — فال‌بک نهایی: زنجیرهٔ tonapi/toncenter روی سرور خودمان
+  // (IP دیتاسنتر پایدار؛ وقتی همهٔ منابع مستقیم روی IP کاربر محدود شده‌اند).
+  // «در کیف پول وقتی ادرس کیف رو شبکه تون کوین را میدم نمیتونه اطلاعات را بخونه»
+  if (!tokens.some((t) => t.symbol === 'TON')) {
+    try {
+      const base = (await getServerUrl()).replace(/\/+$/, '');
+      const d = await fetchJson<{
+        ok?: boolean;
+        balance?: string | null;
+        jettons?: {
+          walletBalance?: string;
+          master?: string;
+          symbol?: string;
+          name?: string;
+          decimals?: string;
+        }[];
+      }>(`${base}/bc/ton?address=${encodeURIComponent(address.trim())}`);
+      if (d?.ok) {
+        const nano = bigStrToNumber(d.balance ?? null);
+        if (nano > 0) {
+          tokens.push({
+            symbol: 'TON',
+            name: 'تون (The Open Network)',
+            kind: 'native' as const,
+            qty: nano / 1e9,
+            priceUsd: 0,
+            change24hPct: null,
+            valueUsd: 0,
+            binancePair: 'TONUSDT',
+            network,
+          });
+        }
+        for (const j of d.jettons ?? []) {
+          let sym = (j.symbol ?? '').toUpperCase();
+          let dec = bigStrToNumber(j.decimals ?? '') || 0;
+          if ((!sym || !dec) && j.master) {
+            const meta = await tonJettonMeta(j.master);
+            if (!sym) sym = (meta.symbol ?? '').toUpperCase();
+            if (!dec) dec = meta.decimals ?? 9;
+          }
+          if (!sym) sym = '?';
+          if (!dec) dec = 9;
+          const qty = bigStrToNumber(j.walletBalance ?? '0') / Math.pow(10, dec);
+          if (!(qty > 0)) continue;
+          tokens.push({
+            symbol: sym,
+            name: j.name ?? sym,
+            kind: 'token' as const,
+            qty,
+            priceUsd: isStableSymbol(sym) ? 1 : 0,
+            change24hPct: isStableSymbol(sym) ? 0 : null,
+            valueUsd: isStableSymbol(sym) ? qty : 0,
+            binancePair: binancePairFor(sym),
+            network,
+          });
+        }
+      }
+    } catch {}
+  }
+
   await fillPricesFromBinance(tokens);
   return tokens;
 }
@@ -1748,6 +1808,38 @@ async function fetchFilecoinBalances(network: BlockchainNetwork, address: string
       if (/^0x/.test(address.trim()) && !tokens.some((t) => t.symbol === 'FIL')) {
         const native = evmTokens.find((t) => t.kind === 'native');
         if (native) tokens.unshift({ ...native, symbol: 'FIL', binancePair: 'FILUSDT' });
+      }
+    } catch {}
+  }
+
+  // v1.3.0 — فال‌بک نهایی: resolve روی سرور خودمان (glif + chainup دو RPC
+  // پشتیبان؛ «نمیتونه دارایی روی شبکه فایل کوین را بخونه»). اگر جواب سرور
+  // فرم EVM آدرس را هم داد، توکن‌های FEVM هم خوانده می‌شوند.
+  if (!tokens.some((t) => t.symbol === 'FIL')) {
+    try {
+      const base = (await getServerUrl()).replace(/\/+$/, '');
+      const d = await fetchJson<{ ok?: boolean; atto?: string; evmAddress?: string | null }>(
+        `${base}/bc/filecoin?address=${encodeURIComponent(address.trim())}`
+      );
+      if (d?.ok && d.atto) {
+        const atto = bigStrToNumber(d.atto);
+        if (atto > 0) {
+          tokens.push({
+            symbol: 'FIL', name: 'فایل‌کوین', kind: 'native' as const,
+            qty: atto / 1e18, priceUsd: 0, change24hPct: null, valueUsd: 0,
+            binancePair: 'FILUSDT', network,
+          });
+        }
+      }
+      if (!evmAddress && d?.evmAddress) evmAddress = d.evmAddress;
+      if (evmAddress && !tokens.some((t) => t.kind === 'token')) {
+        try {
+          const evmTokens = await fetchEvmBalances('filecoin' as BlockchainNetwork, evmAddress);
+          for (const t of evmTokens) {
+            if (t.kind === 'native') continue;
+            tokens.push(t);
+          }
+        } catch {}
       }
     } catch {}
   }

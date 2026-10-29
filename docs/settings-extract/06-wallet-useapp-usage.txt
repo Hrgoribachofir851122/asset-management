@@ -1,0 +1,14 @@
+# ══════════════════════════════════════════════════════════════════
+# نقلِ مستقیم (EXTRACT) — بدون هیچ تغییری
+# منبع: app/(tabs)/wallet/index.tsx — خطوط 2097 تا 2101
+# پروژه: پامپی (pampay-coin-alert-github) نسخه 1.5.12
+# توضیح: تنها وابستگی wallet به AppContext (خط 2099) — و خط 2130-2134 استفاده از settings.refreshInterval
+# کد اصلی برنامه پامپی دست‌نخورده مانده است؛ این فایل فقط برای
+# مرجع/ساخت اپ مستقل «مدیریت دارایی» ضمیمه شده است.
+# ══════════════════════════════════════════════════════════════════
+
+export default function WalletScreen() {
+  const queryClient = useQueryClient();
+  const { settings } = useApp();
+  const [expandedWallet, setExpandedWallet] = useState<string | null>(null);
+  const [showAddForm, setShowAddForm] = useState(false);
