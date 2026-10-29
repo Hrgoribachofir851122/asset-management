@@ -2362,3 +2362,72 @@ export async function ensureCgIds(tokens: BlockchainTokenBalance[]): Promise<voi
     }
   }
 }
+
+// ---------------------------------------------------------------------------
+// v1.6.0 — helpers for the EXCHANGE assets section («چیدمان دارایی صرافی‌ها
+// دقیقاً مثل بخش کیف پول»): real coin icons (same /cg-icons source) and the
+// per-asset market change of the SELECTED PnL timeframe (Binance klines, with
+// CoinGecko fallback) — both cached, both best-effort (never throw).
+// ---------------------------------------------------------------------------
+
+/** آیکون‌های واقعی ارزها برای ردیف‌های صرافی — همان منبع بخش کیف پول. */
+export async function getAssetIconUrls(
+  symbols: string[]
+): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  const need = new Set<string>();
+  for (const s of symbols) {
+    const sym = (s ?? '').trim().toUpperCase();
+    if (!sym) continue;
+    const cached = tokenIconCache.get(sym);
+    if (cached) out[sym] = cached;
+    else need.add(sym);
+  }
+  if (need.size > 0) {
+    const { bySymbol } = await fetchIconMaps([], [...need]);
+    for (const [sym, url] of Object.entries(bySymbol)) {
+      if (url && !tokenIconCache.has(sym)) tokenIconCache.set(sym, url);
+      if (url) out[sym] = url;
+    }
+  }
+  return out;
+}
+
+/**
+ * درصد تغییر قیمتِ بازار یک ارز در تایم‌فریم انتخابی (۱=امروز از ابتدای روز
+ * محلی، N=N روز قبل). برای استیبل‌ها و تومان null برمی‌گردد.
+ */
+export async function fetchAssetChangePct(
+  asset: string,
+  days: number
+): Promise<number | null> {
+  const sym = (asset ?? '').trim().toUpperCase();
+  if (!sym || sym === '\u062A\u0648\u0645\u0627\u0646' /* تومان */) return null;
+  if (isStableSymbol(sym)) return null;
+  let series: { t: number; c: number }[] | null = null;
+  try {
+    series = await fetchDailyCloses(`${sym}USDT`);
+  } catch {}
+  if (!series) {
+    const id = await cgIdForSymbol(sym).catch(() => undefined);
+    if (id) {
+      try {
+        series = await fetchCgCloses(id);
+      } catch {}
+    }
+  }
+  if (!series || series.length === 0) return null;
+  // v1.5.12 semantics — «امروز» = ابتدای روز محلی؛ بقیه N روز به عقب.
+  const target =
+    days === 1
+      ? (() => {
+          const d = new Date();
+          d.setHours(0, 0, 0, 0);
+          return d.getTime();
+        })()
+      : Date.now() - days * 86_400_000;
+  const thenPrice = closeAtOrBefore(series, target);
+  const nowPrice = series[series.length - 1].c;
+  if (!thenPrice || thenPrice <= 0 || !nowPrice || nowPrice <= 0) return null;
+  return ((nowPrice - thenPrice) / thenPrice) * 100;
+}

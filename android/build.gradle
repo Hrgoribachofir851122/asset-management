@@ -3,6 +3,9 @@
 buildscript {
   repositories {
     google()
+    // v1.3.2 — میرور Maven بدون محدودیت نرخ (repo.maven.apache.org گاهی 429 می‌دهد)
+    maven { url 'https://maven.aliyun.com/repository/public' }
+    maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
     mavenCentral()
   }
   dependencies {
@@ -15,6 +18,9 @@ buildscript {
 allprojects {
   repositories {
     google()
+    // v1.3.2 — میرور Maven بدون محدودیت نرخ (repo.maven.apache.org گاهی 429 می‌دهد)
+    maven { url 'https://maven.aliyun.com/repository/public' }
+    maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
     mavenCentral()
     maven { url 'https://www.jitpack.io' }
   }

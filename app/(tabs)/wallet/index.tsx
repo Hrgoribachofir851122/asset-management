@@ -8,6 +8,7 @@ import {
   TextInput,
   ActivityIndicator,
   Platform,
+  Image,
 } from 'react-native';
 import {
   Wallet,
@@ -74,6 +75,9 @@ import {
 import {
   fetchBlockchainWalletData,
   computeBlockchainPnl,
+  // v1.6.0 — آیکون واقعی ارزها + درصد تغییر تایم‌فریم برای ردیف‌های صرافی
+  getAssetIconUrls,
+  fetchAssetChangePct,
 } from '@/utils/blockchainWalletApi';
 import {
   fetchTgjuCloses,
@@ -3250,6 +3254,10 @@ function WalletItem({
   onRefresh,
 }: WalletItemProps) {
   const [activeSection, setActiveSection] = useState<'all' | WalletSection>('all');
+  // v1.6.0 — تایم‌فریم PnL این صرافی (پیش‌فرض «امروز») — بین کارت PnL و
+  // ردیف‌های دارایی مشترک است تا «درصد دلاری تغییرات در تایم فریم انتخابی»
+  // روی تک‌تک دارایی‌ها هم همین تایم‌فریم را نشان دهد.
+  const [assetPnlPeriod, setAssetPnlPeriod] = useState<PnlPeriodDays>(1);
   // v1.4.12 — sanctioned-IP (geo-blocked) state for THIS exchange: the VPN is
   // on and the exit IP is NOT Iranian, but this one exchange answered with a
   // geo-block status (451/403/418) → «این صرافی IP شما را تحریم کرده».
@@ -3535,12 +3543,22 @@ function WalletItem({
               </ScrollView>
 
               {/* ── v1.4.7: PnL دوره‌ای — بالای لیست ارزها (قبل از ردیف‌ها) ── */}
-              <PnlPeriodSection wallet={wallet} iranGated={iranGated} />
+              <PnlPeriodSection
+                wallet={wallet}
+                iranGated={iranGated}
+                period={assetPnlPeriod}
+                onPeriod={setAssetPnlPeriod}
+              />
 
               {activeSection === 'all' ? (
                 <>
                   {aggregated.map((bal) => (
-                    <AggregatedRow key={bal.asset} bal={bal} usdtToToman={usdtToToman} />
+                    <AggregatedRow
+                      key={bal.asset}
+                      bal={bal}
+                      usdtToToman={usdtToToman}
+                      pnlPeriodDays={assetPnlPeriod}
+                    />
                   ))}
                   {aggregated.length === 0 && (
                     <Text style={styles.noBalance}>
@@ -3613,6 +3631,7 @@ function WalletItem({
                       key={`${activeSection}-${bal.asset}`}
                       bal={bal}
                       usdtToToman={usdtToToman}
+                      pnlPeriodDays={assetPnlPeriod}
                     />
                   ))}
                   {activeSection === 'futures' && futuresPositions.length > 0 && (
@@ -3669,46 +3688,110 @@ function WalletItem({
   );
 }
 
-function BalanceRow({ bal, usdtToToman }: { bal: WalletBalance; usdtToToman: number }) {
+// ---------------------------------------------------------------------------
+// v1.6.0 — آیکون واقعی ارز برای ردیف‌های صرافی («شکل واقعی ایکون ارز»)
+// همان منبع بخش کیف پول (/cg-icons از سرور خودمان) با کش ۱ساعته.
+// ---------------------------------------------------------------------------
+function AssetIcon({ symbol }: { symbol: string }) {
+  const q = useQuery({
+    queryKey: ['asset-icon', symbol.toUpperCase()],
+    queryFn: () => getAssetIconUrls([symbol.toUpperCase()]),
+    staleTime: 60 * 60_000,
+    retry: 0,
+  });
+  const url = q.data?.[symbol.toUpperCase()];
+  return (
+    <View style={styles.assetIconWrap}>
+      {url ? (
+        <Image source={{ uri: url }} style={styles.assetIconImg} />
+      ) : (
+        <View style={styles.assetBadge}>
+          <Text style={styles.assetBadgeText}>{symbol.slice(0, 3)}</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
+/** درصد دلاری تغییرِ قیمت در تایم‌فریم انتخابی (تایم‌فریم کارت PnL همان صرافی). */
+function AssetPeriodChangePct({ asset, days }: { asset: string; days: PnlPeriodDays }) {
+  const q = useQuery({
+    queryKey: ['asset-change', asset.toUpperCase(), days],
+    queryFn: () => fetchAssetChangePct(asset, days),
+    staleTime: 5 * 60_000,
+    retry: 0,
+  });
+  const pct = q.data;
+  if (pct === null || pct === undefined) return null;
+  return (
+    <Text
+      style={[
+        styles.assetPeriodChange,
+        { color: pct >= 0 ? colors.dark.green : colors.dark.red },
+      ]}
+    >
+      {(pct >= 0 ? '▲' : '▼')}{' '}
+      {Math.abs(pct).toLocaleString('fa-IR', { maximumFractionDigits: 1 })}٪
+    </Text>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// v1.6.0 — چیدمان دارایی صرافی‌ها دقیقاً مثل بخش کیف پول:
+//   [آیکون واقعی] [نام ارز کنار آیکون] [مقدار دارایی + بازدهی٪ زیرش]
+//   [ارزش دلاری + درصد دلاری تغییرات تایم‌فریم انتخابی زیرش]
+// ---------------------------------------------------------------------------
+
+function BalanceRow({
+  bal,
+  usdtToToman,
+  pnlPeriodDays,
+}: {
+  bal: WalletBalance;
+  usdtToToman: number;
+  pnlPeriodDays: PnlPeriodDays;
+}) {
+  const hasReturn =
+    bal.avgCost !== undefined && bal.avgCost > 0 && bal.pnlPercent !== undefined;
   return (
     <View style={styles.balanceRow}>
-      <View style={styles.balanceLeft}>
-        <View style={styles.assetBadge}>
-          <Text style={styles.assetBadgeText}>{bal.asset.slice(0, 3)}</Text>
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.assetName}>{bal.asset}</Text>
-          <Text style={styles.assetAmount}>
-            {bal.free.toFixed(4)}{bal.locked > 0 ? ` (+${bal.locked.toFixed(4)} قفل)` : ''}
+      {/* آیکون واقعی ارز */}
+      <AssetIcon symbol={bal.asset} />
+      {/* نام ارز — بلافاصله کنار آیکون (مثل ردیف‌های کیف پول) */}
+      <View style={styles.assetNameCol}>
+        <Text style={styles.assetName}>{bal.asset}</Text>
+        {bal.avgCost !== undefined && bal.avgCost > 0 && (
+          <Text style={styles.assetAvg}>
+            میانگین خرید: ${bal.avgCost < 1 ? bal.avgCost.toPrecision(4) : bal.avgCost.toFixed(2)}
           </Text>
-          {bal.avgCost !== undefined && bal.avgCost > 0 && (
-            <Text style={styles.assetAvg}>
-              میانگین خرید: ${bal.avgCost < 1 ? bal.avgCost.toPrecision(4) : bal.avgCost.toFixed(2)}
-            </Text>
-          )}
-        </View>
+        )}
       </View>
+      {/* ستون مقدار دارایی + بازدهی درصد زیرش */}
+      <View style={styles.assetQtyCol}>
+        <Text style={styles.assetAmount}>
+          {bal.free.toFixed(4)}
+          {bal.locked > 0 ? ` (+${bal.locked.toFixed(4)} قفل)` : ''}
+        </Text>
+        {hasReturn && (
+          <Text
+            style={[
+              styles.assetReturn,
+              { color: (bal.pnlPercent ?? 0) >= 0 ? colors.dark.green : colors.dark.red },
+            ]}
+          >
+            {(bal.pnlPercent ?? 0) >= 0 ? '▲' : '▼'}{' '}
+            {Math.abs(bal.pnlPercent ?? 0).toLocaleString('fa-IR', {
+              maximumFractionDigits: 1,
+            })}٪
+          </Text>
+        )}
+      </View>
+      {/* ستون آخر: ارزش دلاری + درصد دلاری تغییرات تایم‌فریم انتخابی */}
       <View style={styles.balanceRight}>
         <Text style={styles.balanceValue}>
           ≈ ${bal.valueUsd.toLocaleString('en-US', { maximumFractionDigits: 2 })}
         </Text>
-        {bal.pnlUsd !== undefined && bal.pnlUsd !== 0 && (
-          <Text
-            style={[
-              styles.balancePnl,
-              { color: bal.pnlUsd > 0 ? colors.dark.green : colors.dark.red },
-            ]}
-          >
-            {formatSignedUsd(bal.pnlUsd)}
-            {bal.pnlPercent !== undefined &&
-              ` (${bal.pnlPercent > 0 ? '+' : ''}${bal.pnlPercent.toFixed(1)}%)`}
-          </Text>
-        )}
-        {usdtToToman > 0 && bal.valueUsd > 0 && (
-          <Text style={styles.balanceToman}>
-            ≈ {formatToman(bal.valueUsd * usdtToToman)} ت
-          </Text>
-        )}
+        <AssetPeriodChangePct asset={bal.asset} days={pnlPeriodDays} />
       </View>
     </View>
   );
@@ -3718,49 +3801,59 @@ function BalanceRow({ bal, usdtToToman }: { bal: WalletBalance; usdtToToman: num
 // «همه» aggregated row — per-asset sum across sections with section chips
 // ---------------------------------------------------------------------------
 
-function AggregatedRow({ bal, usdtToToman }: { bal: AggregatedBalance; usdtToToman: number }) {
+function AggregatedRow({
+  bal,
+  usdtToToman,
+  pnlPeriodDays,
+}: {
+  bal: AggregatedBalance;
+  usdtToToman: number;
+  pnlPeriodDays: PnlPeriodDays;
+}) {
   // Chips only when the asset lives in more than one (or a non-spot) section.
   const showSectionChips =
     bal.sections.length > 1 || (bal.sections.length === 1 && bal.sections[0] !== 'spot');
+  const hasReturn =
+    bal.avgCost !== undefined && bal.avgCost > 0 && bal.pnlPercent !== undefined;
   return (
     <View style={styles.balanceRow}>
-      <View style={styles.balanceLeft}>
-        <View style={styles.assetBadge}>
-          <Text style={styles.assetBadgeText}>{bal.asset.slice(0, 3)}</Text>
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.assetName}>{bal.asset}</Text>
-          <Text style={styles.assetAmount}>
-            {bal.free.toFixed(4)}{bal.locked > 0 ? ` (+${bal.locked.toFixed(4)} قفل)` : ''}
+      {/* آیکون واقعی ارز */}
+      <AssetIcon symbol={bal.asset} />
+      {/* نام ارز — بلافاصله کنار آیکون (مثل ردیف‌های کیف پول) */}
+      <View style={styles.assetNameCol}>
+        <Text style={styles.assetName}>{bal.asset}</Text>
+        {showSectionChips && (
+          <Text style={styles.assetSections}>
+            {bal.sections.map((s) => SECTION_TAB_LABEL[s]).join(' + ')}
           </Text>
-          {showSectionChips && (
-            <Text style={styles.assetSections}>
-              {bal.sections.map((s) => SECTION_TAB_LABEL[s]).join(' + ')}
-            </Text>
-          )}
-        </View>
+        )}
       </View>
+      {/* ستون مقدار دارایی + بازدهی درصد زیرش */}
+      <View style={styles.assetQtyCol}>
+        <Text style={styles.assetAmount}>
+          {bal.free.toFixed(4)}
+          {bal.locked > 0 ? ` (+${bal.locked.toFixed(4)} قفل)` : ''}
+        </Text>
+        {hasReturn && (
+          <Text
+            style={[
+              styles.assetReturn,
+              { color: (bal.pnlPercent ?? 0) >= 0 ? colors.dark.green : colors.dark.red },
+            ]}
+          >
+            {(bal.pnlPercent ?? 0) >= 0 ? '▲' : '▼'}{' '}
+            {Math.abs(bal.pnlPercent ?? 0).toLocaleString('fa-IR', {
+              maximumFractionDigits: 1,
+            })}٪
+          </Text>
+        )}
+      </View>
+      {/* ستون آخر: ارزش دلاری + درصد دلاری تغییرات تایم‌فریم انتخابی */}
       <View style={styles.balanceRight}>
         <Text style={styles.balanceValue}>
           ≈ ${bal.valueUsd.toLocaleString('en-US', { maximumFractionDigits: 2 })}
         </Text>
-        {bal.pnlUsd !== undefined && bal.pnlUsd !== 0 && (
-          <Text
-            style={[
-              styles.balancePnl,
-              { color: bal.pnlUsd > 0 ? colors.dark.green : colors.dark.red },
-            ]}
-          >
-            {formatSignedUsd(bal.pnlUsd)}
-            {bal.pnlPercent !== undefined &&
-              ` (${bal.pnlPercent > 0 ? '+' : ''}${bal.pnlPercent.toFixed(1)}%)`}
-          </Text>
-        )}
-        {usdtToToman > 0 && bal.valueUsd > 0 && (
-          <Text style={styles.balanceToman}>
-            ≈ {formatToman(bal.valueUsd * usdtToToman)} ت
-          </Text>
-        )}
+        <AssetPeriodChangePct asset={bal.asset} days={pnlPeriodDays} />
       </View>
     </View>
   );
@@ -3822,11 +3915,100 @@ function FuturesPositionRow({ pos }: { pos: FuturesPosition }) {
 }
 
 // ---------------------------------------------------------------------------
+// v1.6.0 — خلاصه‌ی سود/زیان «همه‌ی تایم‌فریم‌ها» برای یک صرافی
+// («تغیررات pnl در تایم فریمهای مختلف در pnl اون صرافی را نشون بده حتما»).
+// از همان کش ['exchange-pnl'] استفاده می‌کند (بدون درخواست تکراری)؛ ردیفِ
+// فعال هایلایت است و با ضربه زدن، همان بازه برای جزئیات انتخاب می‌شود.
+// اگر صرافی اصلاً PnL دوره‌ای ندهد (نوبیتکس/والکس/…)، کل جعبه مخفی می‌شود.
+// ---------------------------------------------------------------------------
+function PnlAllPeriodsSummary({
+  wallet,
+  iranGated,
+  period,
+  onPeriod,
+}: {
+  wallet: ExchangeWallet;
+  iranGated?: boolean;
+  period: PnlPeriodDays;
+  onPeriod: (p: PnlPeriodDays) => void;
+}) {
+  const queries = useQueries({
+    queries: PNL_PERIODS.map((p) => ({
+      queryKey: ['exchange-pnl', wallet.id, p] as const,
+      queryFn: () => fetchPeriodPnl(wallet, p),
+      staleTime: 5 * 60_000,
+      retry: 1,
+      retryDelay: (attempt: number) => 1200 * (attempt + 1),
+      enabled: !iranGated,
+    })),
+  });
+  const allLoaded = queries.every((q) => q.data !== undefined);
+  const anySupported = queries.some((q) => q.data?.supported);
+  if (allLoaded && !anySupported) return null;
+  const anyLoading = queries.some((q) => q.isFetching);
+  return (
+    <View style={styles.pnlAllPeriodsBox}>
+      <View style={styles.pnlAllPeriodsHead}>
+        <Text style={styles.pnlAllPeriodsTitle}>PnL همه تایم‌فریم‌ها</Text>
+        {anyLoading && <ActivityIndicator size="small" color={colors.dark.accent} />}
+      </View>
+      {PNL_PERIODS.map((p, i) => {
+        const q = queries[i];
+        const pnl = q?.data;
+        const total =
+          pnl && pnl.supported ? pnl.realizedPnl + pnl.fundingFees + pnl.commissions : null;
+        const active = period === p;
+        return (
+          <Pressable
+            key={p}
+            style={[styles.pnlAllPeriodsRow, active && styles.pnlAllPeriodsRowActive]}
+            onPress={() => onPeriod(p)}
+          >
+            <Text style={[styles.pnlAllPeriodsLabel, active && styles.pnlAllPeriodsLabelActive]}>
+              {PNL_PERIOD_LABEL[p]}
+            </Text>
+            <Text
+              style={[
+                styles.pnlAllPeriodsValue,
+                {
+                  color:
+                    total === null
+                      ? colors.dark.textMuted
+                      : total > 0
+                        ? colors.dark.green
+                        : total < 0
+                          ? colors.dark.red
+                          : colors.dark.text,
+                },
+              ]}
+            >
+              {!q || q.isFetching ? '…' : total === null ? '—' : formatSignedUsd(total)}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // PnL period selector + result (exchange-native numbers)
 // ---------------------------------------------------------------------------
 
-function PnlPeriodSection({ wallet, iranGated }: { wallet: ExchangeWallet; iranGated?: boolean }) {
-  const [period, setPeriod] = useState<PnlPeriodDays>(30);
+function PnlPeriodSection({
+  wallet,
+  iranGated,
+  period,
+  onPeriod,
+}: {
+  wallet: ExchangeWallet;
+  iranGated?: boolean;
+  /** v1.6.0 — تایم‌فریم انتخابی بالا lift شده تا ردیف‌های دارایی هم همان
+   *  تایم‌فریم را نشان دهند («درصد دلاری تغییراتش در تایم فریم انتخابی»)؛
+   *  پیش‌فرض «امروز» («در بخش ارز دیجیتال pnl پیش فرض روی امروز باشه»). */
+  period: PnlPeriodDays;
+  onPeriod: (p: PnlPeriodDays) => void;
+}) {
   const pnlQuery = useQuery({
     queryKey: ['exchange-pnl', wallet.id, period],
     queryFn: () => fetchPeriodPnl(wallet, period),
@@ -3869,7 +4051,7 @@ function PnlPeriodSection({ wallet, iranGated }: { wallet: ExchangeWallet; iranG
             <Pressable
               key={p}
               style={[styles.pnlChip, active && styles.pnlChipActive]}
-              onPress={() => setPeriod(p)}
+              onPress={() => onPeriod(p)}
             >
               <Text style={[styles.pnlChipText, active && styles.pnlChipTextActive]}>
                 {PNL_PERIOD_LABEL[p]}
@@ -3878,6 +4060,12 @@ function PnlPeriodSection({ wallet, iranGated }: { wallet: ExchangeWallet; iranG
           );
         })}
       </View>
+
+      {/* v1.6.0 — «تغیررات pnl در تایم فریمهای مختلف در pnl اون صرافی را
+          نشون بده حتما» — خلاصه‌ی همه‌ی بازه‌ها برای همین صرافی، یک‌جا؛
+          همان کوئری‌های کش‌شده‌ی ['exchange-pnl'] (بدون درخواست اضافه)،
+          ضربه به هر ردیف همان بازه را انتخاب می‌کند. */}
+      <PnlAllPeriodsSummary wallet={wallet} iranGated={iranGated} period={period} onPeriod={onPeriod} />
 
       {pnlQuery.error && !pnl && (
         <View>
@@ -4000,7 +4188,8 @@ function TotalPnlPeriodSection({
   /** v1.2.0 — گیت سخت IP تحریمی: کل PnL صرافی‌ها غیرفعال */
   ipBlocked?: boolean;
 }) {
-  const [period, setPeriod] = useState<PnlPeriodDays>(30);
+  // v1.6.0 — پیش‌فرض «امروز» («در بخش ارز دیجیتال pnl پیش فرض روی امروز باشه»)
+  const [period, setPeriod] = useState<PnlPeriodDays>(1);
 
   // Only exchanges whose API actually provides period PnL.
   const supportedWallets = useMemo(
@@ -4648,7 +4837,8 @@ const styles = createThemedStyles(() => StyleSheet.create({
     fontSize: 13,
     fontWeight: '700' as const,
     color: colors.dark.text,
-    textAlign: 'right',
+    // v1.6.0 — نام ارز کنار آیکون می‌نشیند (چپ‌چین)، مثل ردیف‌های کیف پول
+    textAlign: 'left',
   },
   assetAmount: {
     fontSize: 11,
@@ -4662,6 +4852,84 @@ const styles = createThemedStyles(() => StyleSheet.create({
   },
   balanceRight: {
     alignItems: 'flex-end',
+  },
+  // ── v1.6.0 — چیدمان جدید ردیف دارایی صرافی (مثل بخش کیف پول) ──
+  assetIconWrap: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  assetIconImg: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+  },
+  assetNameCol: {
+    flex: 1,
+    minWidth: 72,
+    gap: 1,
+  },
+  assetQtyCol: {
+    alignItems: 'center',
+    minWidth: 72,
+    gap: 1,
+  },
+  assetReturn: {
+    fontSize: 9.5,
+    fontWeight: '700' as const,
+  },
+  assetPeriodChange: {
+    fontSize: 9.5,
+    fontWeight: '700' as const,
+    marginTop: 1,
+  },
+  // ── v1.6.0 — PnL همه‌ی تایم‌فریم‌ها (کارت هر صرافی) ──
+  pnlAllPeriodsBox: {
+    marginTop: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
+    backgroundColor: colors.dark.background,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.dark.border,
+  },
+  pnlAllPeriodsHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 10,
+    paddingTop: 2,
+    paddingBottom: 4,
+  },
+  pnlAllPeriodsTitle: {
+    fontSize: 10,
+    fontWeight: '700' as const,
+    color: colors.dark.textSecondary,
+  },
+  pnlAllPeriodsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  pnlAllPeriodsRowActive: {
+    backgroundColor: colors.dark.accent + '1A',
+  },
+  pnlAllPeriodsLabel: {
+    fontSize: 10.5,
+    color: colors.dark.textSecondary,
+  },
+  pnlAllPeriodsLabelActive: {
+    color: colors.dark.accent,
+    fontWeight: '700' as const,
+  },
+  pnlAllPeriodsValue: {
+    fontSize: 11,
+    fontWeight: '700' as const,
+    fontVariant: ['tabular-nums'],
   },
   balanceValue: {
     fontSize: 13,

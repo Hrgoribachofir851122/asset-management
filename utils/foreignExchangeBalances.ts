@@ -21,6 +21,8 @@ import { ExchangeId } from '@/types/crypto';
 import { exchangeNow, markClockStale } from './exchangeClock';
 import { geoBlockErrorFor, noteResponseStatus } from './geoBlock';
 import { isRsaSecret, rsaSignSha256 } from './rsaSign';
+// v1.6.0 — صرافی‌های ایرانی: ارزش دلاری موجودی تومان با نرخ لحظه‌ای تتر
+import { fetchUsdtTomanPrice } from './nobitexApi';
 
 export interface ForeignWallet {
   apiKey: string;
@@ -1734,6 +1736,428 @@ function orbiterError(name: string): Error {
 // Dispatcher
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// v1.6.0 — صرافی‌های ایرانی با API رسمی («صرافیهای ایرانی هم که api ارایه
+// میدن را به لیست صرافیها اضاف کن»): والکس / تبدیل / بیت‌پین / رمزینکس / اکسیر.
+//
+//   • همه فقط‌خواندنی‌اند (موجودی) و از داخل ایران بدون فیلترشکن کار می‌کنند —
+//     در FOREIGN_EXCHANGE_IDS نیستند پس گیت IP ایران هرگز رویشان اعمال نمی‌شود.
+//   • موجودی تومان/ریال هر صرافی به ردیف «تومان» (همان قالب نوبیتکس) نرمالایز
+//     و با نرخ لحظه‌ای USDT/Toman دلاری می‌شود.
+//   • هر fetcher چند مسیر/هدر جایگزین را مثل نوبیتکس امتحان می‌کند تا تغییر
+//     جزئی مسیرهای API در آینده، کل موجودی را نبرد؛ در بدترین حالت خطای
+//     فارسیِ دقیق برمی‌گردد، نه صفرِ بی‌صدا.
+// ---------------------------------------------------------------------------
+
+const TOMAN_CODES = new Set(['IRT', 'TMN', 'TOMAN']);
+const RIAL_CODES = new Set(['IRR', 'RLS']);
+
+let usdtToTomanRateCache: { at: number; rate: number } | null = null;
+async function usdtToTomanRate(): Promise<number> {
+  if (usdtToTomanRateCache && Date.now() - usdtToTomanRateCache.at < 60_000) {
+    return usdtToTomanRateCache.rate;
+  }
+  let rate = 0;
+  try {
+    rate = (await fetchUsdtTomanPrice()).usdtToToman ?? 0;
+  } catch {}
+  usdtToTomanRateCache = { at: Date.now(), rate };
+  return rate;
+}
+
+/** تومان/ریال → ردیف «تومان» با ارزش دلاری به نرخ لحظه‌ای تتر. */
+function pushTomanRow(
+  out: ForeignBalance[],
+  code: string,
+  free: number,
+  locked: number,
+  usdtToToman: number
+): void {
+  const div = RIAL_CODES.has(code) ? 10 : 1;
+  const total = (free + locked) / div;
+  if (!Number.isFinite(total) || total <= 0.000001) return;
+  out.push({
+    asset: 'تومان',
+    free: free / div,
+    locked: locked / div,
+    total,
+    valueUsd: usdtToToman > 0 ? total / usdtToToman : 0,
+  });
+}
+
+function iranianNetworkError(name: string, lastError: string): Error {
+  return new Error(
+    `اتصال به ${name} برقرار نشد (${lastError}) — اینترنت را بررسی کنید یا بعداً دوباره تلاش کنید.`
+  );
+}
+
+// ── والکس (Wallex) — GET /v1/account/balances با هدر X-API-Key ──────────────
+// منبع: developers.wallex.ir → «کیف‌پول حساب اصلی»
+// پاسخ: result.balances = { BTC: { asset, faName, value, locked, … } }
+async function fetchWallex(w: ForeignWallet): Promise<ForeignBalance[]> {
+  const key = w.apiKey.trim();
+  const secret = w.apiSecret.trim();
+  // کلید والکس یک رشته‌ی تکی است — کاربر ممکن است آن را در هرکدام از دو فیلد
+  // بگذارد؛ همه‌ی حالت‌های معقول امتحان می‌شوند (مثل نوبیتکس).
+  const keyVariants = Array.from(new Set([key, secret, `${key}:${secret}`])).filter(Boolean);
+  const bases = ['https://api.wallex.ir'];
+  const paths = ['/v1/account/balances', '/account/balances'];
+  let payload: Record<string, unknown> | null = null;
+  let lastError = 'unknown';
+  outer: for (const base of bases) {
+    for (const path of paths) {
+      for (const k of keyVariants) {
+        try {
+          const res = await rawFetch(`${base}${path}`, { headers: { 'X-API-Key': k } });
+          if (res.ok) {
+            const j = parseJson(res.text);
+            const bal = j?.result as { balances?: unknown } | undefined;
+            if (bal && bal.balances && typeof bal.balances === 'object') {
+              payload = j;
+              break outer;
+            }
+          } else {
+            lastError = `HTTP ${res.status}`;
+            if (res.status === 401 || res.status === 403) continue;
+          }
+        } catch (e) {
+          lastError = e instanceof Error ? e.message : String(e);
+        }
+      }
+    }
+  }
+  if (!payload) {
+    throw new Error(
+      `دریافت موجودی ${w.exchangeName} ناموفق بود (${lastError}). در والکس یک API-Key فقط‌خواندنی بسازید (پروفایل → مدیریت API) و همان کلید را در فیلد API Key وارد کنید.`
+    );
+  }
+  const balancesMap =
+    ((payload as { result?: { balances?: Record<string, Record<string, unknown>> } }).result
+      ?.balances ?? {}) as Record<string, Record<string, unknown>>;
+  const rate = await usdtToTomanRate();
+  const out: ForeignBalance[] = [];
+  for (const [k, b] of Object.entries(balancesMap)) {
+    const sym = String(b.asset ?? k).trim().toUpperCase();
+    if (!sym) continue;
+    const free = toNum(b.value);
+    const locked = toNum(b.locked);
+    if (TOMAN_CODES.has(sym) || RIAL_CODES.has(sym)) {
+      pushTomanRow(out, sym, free, locked, rate);
+      continue;
+    }
+    pushBalance(out, sym, free, locked, 'spot');
+  }
+  return out;
+}
+
+// ── تبدیل (Tabdeal) — API سازگار با بایننس؛ هدر X-MBX-APIKEY (امنیت USER) ───
+// منبع: docs.tabdeal.org (مکانیزم USER فقط api-key می‌خواهد؛ امضا لازم نیست)
+async function fetchTabdeal(w: ForeignWallet): Promise<ForeignBalance[]> {
+  const key = w.apiKey.trim() || w.apiSecret.trim();
+  const bases = ['https://api.tabdeal.org'];
+  const paths = [
+    '/r/api/v1/spot/accounts',
+    '/api/v1/spot/accounts',
+    '/r/api/v1/accounts',
+    '/api/v1/accounts',
+  ];
+  let rows: unknown[] | null = null;
+  let lastError = 'unknown';
+  outer: for (const base of bases) {
+    for (const path of paths) {
+      try {
+        const res = await rawFetch(`${base}${path}`, { headers: { 'X-MBX-APIKEY': key } });
+        if (res.ok) {
+          const j = parseJson(res.text);
+          const list = Array.isArray(j)
+            ? j
+            : Array.isArray(j?.data)
+              ? j.data
+              : Array.isArray(j?.accounts)
+                ? j.accounts
+                : null;
+          if (list && list.length >= 0 && (list.length === 0 || typeof list[0] === 'object')) {
+            rows = list;
+            break outer;
+          }
+        } else {
+          lastError = `HTTP ${res.status}`;
+        }
+      } catch (e) {
+        lastError = e instanceof Error ? e.message : String(e);
+      }
+    }
+  }
+  if (!rows) {
+    throw new Error(
+      `دریافت موجودی ${w.exchangeName} ناموفق بود (${lastError}). در تبدیل یک کلید API فقط‌خواندنی بسازید (پروفایل → مدیریت API) و کلید را در API Key و Secret را در فیلد Secret وارد کنید.`
+    );
+  }
+  const rate = await usdtToTomanRate();
+  const out: ForeignBalance[] = [];
+  for (const raw of rows) {
+    const b = (raw ?? {}) as Record<string, unknown>;
+    const sym = String(
+      b.asset ?? b.currency ?? b.coin ?? b.currency_symbol ?? ''
+    )
+      .trim()
+      .toUpperCase();
+    if (!sym) continue;
+    const free = toNum(b.free ?? b.available ?? b.balance ?? b.value);
+    const locked = toNum(b.locked ?? b.in_order ?? b.frozen ?? b.locked_balance ?? b.blocked_balance);
+    if (TOMAN_CODES.has(sym) || RIAL_CODES.has(sym)) {
+      pushTomanRow(out, sym, free, locked, rate);
+      continue;
+    }
+    pushBalance(out, sym, free, locked, 'spot');
+  }
+  return out;
+}
+
+// ── بیت‌پین (Bitpin) — GET /api/v1/wlt/list/ با هدر Authorization: Bearer ────
+// منبع: docs.bitpin.ir (Base URL فعلی api.bitpin.org — دامنه .ir موقتاً قطع است)
+async function fetchBitpin(w: ForeignWallet): Promise<ForeignBalance[]> {
+  const token = w.apiKey.trim() || w.apiSecret.trim();
+  const bases = ['https://api.bitpin.org', 'https://api.bitpin.ir'];
+  const paths = ['/api/v1/wlt/list/', '/api/v1/wallet/list/', '/api/v1/wlt/list', '/api/v1/wallet/'];
+  let rows: unknown[] | null = null;
+  let lastError = 'unknown';
+  outer: for (const base of bases) {
+    for (const path of paths) {
+      try {
+        const res = await rawFetch(`${base}${path}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const j = parseJson(res.text);
+          const list = Array.isArray(j)
+            ? j
+            : Array.isArray(j?.data)
+              ? j.data
+              : Array.isArray(j?.results)
+                ? j.results
+                : null;
+          if (list && (list.length === 0 || typeof list[0] === 'object')) {
+            rows = list;
+            break outer;
+          }
+        } else {
+          lastError = `HTTP ${res.status}`;
+        }
+      } catch (e) {
+        lastError = e instanceof Error ? e.message : String(e);
+      }
+    }
+  }
+  if (!rows) {
+    throw new Error(
+      `دریافت موجودی ${w.exchangeName} ناموفق بود (${lastError}). در بیت‌پین از بخش پروفایل → API یک توکن فقط‌خواندنی بسازید و آن را در فیلد API Key وارد کنید.`
+    );
+  }
+  const rate = await usdtToTomanRate();
+  const out: ForeignBalance[] = [];
+  for (const raw of rows) {
+    const b = (raw ?? {}) as Record<string, unknown>;
+    const sym = String(b.currency ?? b.symbol ?? b.coin ?? '').trim().toUpperCase();
+    if (!sym) continue;
+    const free = toNum(b.balance ?? b.available ?? b.value);
+    const locked = toNum(b.blocked_balance ?? b.blocked ?? b.locked ?? b.in_order);
+    if (TOMAN_CODES.has(sym) || RIAL_CODES.has(sym)) {
+      pushTomanRow(out, sym, free, locked, rate);
+      continue;
+    }
+    pushBalance(out, sym, free, locked, 'spot');
+  }
+  return out;
+}
+
+// ── رمزینکس (Ramzinex) — دو مرحله‌ای: getToken سپس funds/details ─────────────
+// منبع: مستندات رسمی رمزینکس (Postman) + SDK رسمی
+//   POST https://ramzinex.com/exchange/api/v1.0/auth/api_key/getToken
+//        body: { api_key, secret } → data.token
+//   GET  https://ramzinex.com/exchange/api/v1.0/exchange/users/me/funds/details
+//        هدرها: Authorization2: Bearer <token> + x-api-key: <api_key>
+let ramzinexCurrencyMap: {
+  at: number;
+  byId: Map<string, string>;
+} | null = null;
+async function ramzinexIdToSymbol(): Promise<Map<string, string>> {
+  if (ramzinexCurrencyMap && Date.now() - ramzinexCurrencyMap.at < 24 * 3600_000) {
+    return ramzinexCurrencyMap.byId;
+  }
+  const byId = new Map<string, string>();
+  try {
+    const res = await rawFetch(
+      'https://publicapi.ramzinex.com/exchange/api/v1.0/exchange/currencies'
+    );
+    const j = parseJson(res.text);
+    const list = (Array.isArray(j?.data) ? j.data : Array.isArray(j) ? j : []) as Array<
+      Record<string, unknown>
+    >;
+    for (const c of list) {
+      const id = String(c.id ?? '');
+      const sym = String(c.symbol ?? '').trim().toUpperCase();
+      if (id && sym) byId.set(id, sym);
+    }
+  } catch {}
+  ramzinexCurrencyMap = { at: Date.now(), byId };
+  return byId;
+}
+
+async function fetchRamzinex(w: ForeignWallet): Promise<ForeignBalance[]> {
+  const apiKey = w.apiKey.trim();
+  const secret = w.apiSecret.trim();
+  // مرحله ۱ — تبدیل api_key + secret به توکن
+  let token = '';
+  let lastError = 'unknown';
+  try {
+    const res = await rawFetch(
+      'https://ramzinex.com/exchange/api/v1.0/auth/api_key/getToken',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ api_key: apiKey, secret }),
+      }
+    );
+    const j = parseJson(res.text);
+    token = String((j?.data as { token?: unknown })?.token ?? j?.token ?? '');
+    if (!res.ok) lastError = `HTTP ${res.status}`;
+  } catch (e) {
+    lastError = e instanceof Error ? e.message : String(e);
+  }
+  if (!token) {
+    throw new Error(
+      `ورود به API رمزینکس ناموفق بود (${lastError}). در رمزینکس یک کلید API بسازید (پروفایل → مدیریت API)، کلید را در فیلد API Key و «کلید خصوصی/Secret» را در فیلد Secret وارد کنید.`
+    );
+  }
+  // مرحله ۲ — جزئیات دارایی‌ها
+  let payload: Record<string, unknown> | null = null;
+  try {
+    const res2 = await rawFetch(
+      'https://ramzinex.com/exchange/api/v1.0/exchange/users/me/funds/details',
+      { headers: { Authorization2: `Bearer ${token}`, 'x-api-key': apiKey } }
+    );
+    if (res2.ok) payload = parseJson(res2.text);
+    else lastError = `HTTP ${res2.status}`;
+  } catch (e) {
+    lastError = e instanceof Error ? e.message : String(e);
+  }
+  if (!payload) {
+    throw iranianNetworkError(w.exchangeName, lastError);
+  }
+  // پاسخ: { status: 0, data: … } — ساختار داده ممکن است دیکشنری id→موجودی یا
+  // آرایه باشد؛ به‌صورت tolerant هر دو حالت پشتیبانی می‌شود.
+  const data = (payload as { data?: unknown }).data ?? payload;
+  const byId = await ramzinexIdToSymbol();
+  const entries: Array<[string, Record<string, unknown>]> = [];
+  const collect = (obj: Record<string, unknown>) => {
+    for (const [k, v] of Object.entries(obj)) {
+      if (v && typeof v === 'object' && !Array.isArray(v)) {
+        const rec = v as Record<string, unknown>;
+        const hasBalanceField =
+          'balance' in rec ||
+          'active' in rec ||
+          'available' in rec ||
+          'blocked_balance' in rec ||
+          'total_balance' in rec;
+        if (hasBalanceField) entries.push([k, rec]);
+      }
+    }
+  };
+  if (Array.isArray(data)) {
+    for (const item of data) {
+      if (item && typeof item === 'object') entries.push(['', item as Record<string, unknown>]);
+    }
+  } else if (data && typeof data === 'object') {
+    const d = data as Record<string, unknown>;
+    const inner =
+      (d.currencies as Record<string, unknown>) ??
+      (d.funds as Record<string, unknown>) ??
+      (d.wallets as Record<string, unknown>) ??
+      d;
+    collect(inner);
+  }
+  const rate = await usdtToTomanRate();
+  const out: ForeignBalance[] = [];
+  for (const [k, rec] of entries) {
+    const sym = String(
+      rec.symbol ?? rec.currency_symbol ?? rec.currency ?? ''
+    )
+      .trim()
+      .toUpperCase() || byId.get(String(rec.id ?? k)) || '';
+    if (!sym) continue;
+    const free = toNum(rec.balance ?? rec.active ?? rec.available ?? rec.total_balance);
+    const locked = toNum(rec.blocked_balance ?? rec.blocked ?? rec.in_order);
+    if (TOMAN_CODES.has(sym) || RIAL_CODES.has(sym)) {
+      pushTomanRow(out, sym, free, locked, rate);
+      continue;
+    }
+    pushBalance(out, sym, free, locked, 'spot');
+  }
+  return out;
+}
+
+// ── اکسیر (Exir) — GET /v2/user/balance با امضای HMAC-SHA256 ────────────────
+// منبع: apidocs.exir.io — امضا: HMAC_SHA256(secret, `${METHOD}${PATH}${expires}`)
+// پاسخ: { usdt_balance, usdt_available, btc_balance, … }
+async function fetchExir(w: ForeignWallet): Promise<ForeignBalance[]> {
+  const apiKey = w.apiKey.trim();
+  const secret = w.apiSecret.trim();
+  const path = '/v2/user/balance';
+  const buildHeaders = (exp: number) => ({
+    'api-key': apiKey,
+    'api-signature': CryptoJS.HmacSHA256(`GET${path}${exp}`, secret).toString(
+      CryptoJS.enc.Hex
+    ),
+    'api-expires': String(exp),
+  });
+  let payload: Record<string, unknown> | null = null;
+  let lastError = 'unknown';
+  // امتحان ۱: expires بر حسب ثانیه (استاندارد HollaEx) — امتحان ۲: میلی‌ثانیه
+  for (const unit of ['s', 'ms']) {
+    try {
+      const exp =
+        unit === 's'
+          ? Math.floor(Date.now() / 1000) + 30
+          : Date.now() + 30_000;
+      const res = await rawFetch(`https://api.exir.io${path}`, { headers: buildHeaders(exp) });
+      if (res.ok) {
+        const j = parseJson(res.text);
+        if (j) {
+          payload = j;
+          break;
+        }
+      } else {
+        lastError = `HTTP ${res.status}`;
+      }
+    } catch (e) {
+      lastError = e instanceof Error ? e.message : String(e);
+    }
+  }
+  if (!payload) {
+    throw new Error(
+      `دریافت موجودی ${w.exchangeName} ناموفق بود (${lastError}). در اکسیر (apidocs.exir.io) یک API-Key فقط‌خواندنی بسازید و Key/Secret را دقیقاً وارد کنید.`
+    );
+  }
+  const rate = await usdtToTomanRate();
+  const out: ForeignBalance[] = [];
+  for (const [k, v] of Object.entries(payload)) {
+    if (!k.endsWith('_balance')) continue;
+    const sym = k.slice(0, -'_balance'.length).trim().toUpperCase();
+    if (!sym || typeof v === 'object') continue;
+    const total = toNum(v);
+    const available = toNum((payload as Record<string, unknown>)[`${sym.toLowerCase()}_available`]);
+    const free = available > 0 ? available : total;
+    const locked = Math.max(total - free, 0);
+    if (TOMAN_CODES.has(sym) || RIAL_CODES.has(sym)) {
+      pushTomanRow(out, sym, free, locked, rate);
+      continue;
+    }
+    pushBalance(out, sym, free, locked, 'spot');
+  }
+  return out;
+}
+
 const FOREIGN_FETCHERS: Partial<
   Record<ExchangeId, (w: ForeignWallet) => Promise<ForeignBalance[]>>
 > = {
@@ -1754,6 +2178,12 @@ const FOREIGN_FETCHERS: Partial<
   bitunix: fetchBitunix,
   kcex: fetchKcex,
   iranicart: fetchIranicart,
+  // v1.6.0 — صرافی‌های ایرانی با API رسمی
+  wallex: fetchWallex,
+  tabdeal: fetchTabdeal,
+  bitpin: fetchBitpin,
+  ramzinex: fetchRamzinex,
+  exir: fetchExir,
 };
 
 export async function fetchForeignExchangeBalance(

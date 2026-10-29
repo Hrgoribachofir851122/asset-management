@@ -22,7 +22,12 @@ export type ExchangeId =
   | 'nobitex'
   | 'arzinja'
   | 'iranicart'
-  | 'bitperp';
+  | 'bitperp'
+  | 'wallex'
+  | 'tabdeal'
+  | 'bitpin'
+  | 'ramzinex'
+  | 'exir';
 
 export type SignalType = 'pump' | 'dump';
 

@@ -123,7 +123,8 @@ export default function BlockchainWalletsSection({
   const [expandedWallet, setExpandedWallet] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingWalletId, setEditingWalletId] = useState<string | null>(null);
-  const [pnlPeriod, setPnlPeriod] = useState<PnlPeriod>(7);
+  // v1.6.0 — پیش‌فرض «امروز» (همراستا با بقیه‌ی PnLهای برنامه)
+  const [pnlPeriod, setPnlPeriod] = useState<PnlPeriod>(1);
 
   const totalUsd = useMemo(
     () =>
@@ -2021,8 +2022,9 @@ const styles = createThemedStyles(() =>
       fontSize: 11.5,
       fontWeight: '800' as const,
       color: colors.dark.text,
-      // v1.3.0 — نماد لاتین (ETH/USDT…) چپ‌چین نمی‌ماند؛ به سمت راست ستون
-      textAlign: 'right',
+      // v1.6.0 — «چیدمان ستون نام ارز برعکس شود: نام ارز کنار آیکون خودش» —
+      // نماد لاتین (ETH/USDT) بلافاصله بعد از آیکون می‌نشیند (سمت چپ ستون).
+      textAlign: 'left',
     },
     tokenNetTag: {
       fontSize: 8.5,
@@ -2031,8 +2033,8 @@ const styles = createThemedStyles(() =>
     tokenName: {
       fontSize: 9,
       color: colors.dark.textMuted,
-      // v1.3.0 — همراستا با نماد، راست‌چین
-      textAlign: 'right',
+      // v1.6.0 — همراستا با نماد، کنار آیکون
+      textAlign: 'left',
     },
     tokenPnl: {
       fontSize: 9,
