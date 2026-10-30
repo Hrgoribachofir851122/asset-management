@@ -768,6 +768,113 @@ async function handleBcFil(res, query) {
 }
 
 
+// ─── v1.3.6 — قیمت خرید/فروش طلای آب‌شده از سایت طلاین (taline.ir) ──────
+// GET /taline-gold → { ok, buy, sell, updatedAt, stale }
+//
+// طلاین قیمت خرید/فروش هر گرم طلای آب‌شده را با shortcode سرور-ساید داخل
+// HTML صفحه می‌گذارد (LiteSpeed ESI). بعضی بازدیدها به‌جای عدد «—» می‌گیرند
+// (بکتِ کش کهنه)، پس زنجیرهٔ خوانش:
+//   1) دسکتاپ-UA → پارس مقدار ESI کنار برچسب‌های «قیمت خرید/فروش هر گرم»
+//   2) موبایل-UA + کش‌شکن (باکت کش متفاوت لایت‌اسپید)
+//   3) هر دو خالی → آخرین جواب سالم (تا ۲۴ ساعت) با stale:true
+// جواب سالم ۶۰ ثانیه کش می‌شود تا اپ هر چند دقیقه بدون فشار بیاید.
+const talineCache = new Map(); // 'last-good' → { at, payload }
+const TALINE_TTL = 60_000; // کش جواب سالم
+const TALINE_STALE_TTL = 24 * 3_600_000; // نگه‌داشتن آخرین قیمت معتبر
+
+function talineNormalizeNum(raw) {
+  if (!raw) return NaN;
+  let s = String(raw);
+  const fa = '۰۱۲۳۴۵۶۷۸۹';
+  const ar = '٠١٢٣٤٥٦٧٨٩';
+  for (let i = 0; i < 10; i++) {
+    s = s.split(fa[i]).join(String(i));
+    s = s.split(ar[i]).join(String(i));
+  }
+  s = s.replace(/[,،٬\s]/g, '');
+  // «—» یا هر متن دیگر → نامعتبر
+  if (!/^\d+(\.\d+)?$/.test(s)) return NaN;
+  const n = parseFloat(s);
+  // محدودهٔ منطقی برای قیمت گرم طلا به تومان
+  if (!Number.isFinite(n) || n < 100_000 || n > 1e12) return NaN;
+  return n;
+}
+
+function talineExtractAfter(html, label) {
+  const i = html.indexOf(label);
+  if (i < 0) return NaN;
+  const seg = html.slice(i, i + 2500);
+  // اولین مقدار ESI بعد از برچسب: <!-- lscwp esi-shortcode -->VALUE<!-- …
+  const m = seg.match(/esi-shortcode\s*-->([^<]{0,80})</);
+  return m ? talineNormalizeNum(m[1]) : NaN;
+}
+
+async function talineFetchOnce(url, ua) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 20_000);
+  try {
+    const r = await fetch(url, {
+      signal: ctrl.signal,
+      headers: {
+        'User-Agent': ua,
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'fa-IR,fa;q=0.9,en;q=0.6',
+        Referer: 'https://taline.ir/',
+      },
+    });
+    if (!r.ok) throw new Error(`taline HTTP ${r.status}`);
+    return await r.text();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * زنجیرهٔ خوانش صفحهٔ طلاین: مستقیم (دسکتاپ → موبایل + کش‌شکن) و بعد دو
+ * رلهٔ عمومی برای وقتی IP سرور موقتاً توسط لایت‌اسپید/کلودفلر پرچم شود.
+ * هر کدام که عدد خرید و فروش معتبر برگرداند برنده است.
+ */
+async function talineFetchHtml() {
+  const desktop = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36';
+  const mobile = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Mobile Safari/537.36';
+  const attempts = [
+    () => talineFetchOnce('https://taline.ir/', desktop),
+    () => talineFetchOnce(`https://taline.ir/?t=${Date.now()}`, mobile),
+    () => talineFetchOnce(`https://corsproxy.io/?url=${encodeURIComponent('https://taline.ir/')}`, desktop),
+    () => talineFetchOnce(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent('https://taline.ir/')}`, desktop),
+  ];
+  let lastErr;
+  for (const attempt of attempts) {
+    try {
+      return await attempt();
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error('taline-unreachable');
+}
+
+async function handleTalineGold(res) {
+  const hit = talineCache.get('last-good');
+  if (hit && Date.now() - hit.at < TALINE_TTL) return sendJson(res, 200, hit.payload);
+  try {
+    const html = await talineFetchHtml();
+    const buy = talineExtractAfter(html, 'قیمت خرید هر گرم');
+    const sell = talineExtractAfter(html, 'قیمت فروش هر گرم');
+    if (!(buy > 0 && sell > 0)) throw new Error('taline-empty');
+    // کنترل عقلانی: خرید و فروش باید نزدیک هم باشند
+    if (Math.max(buy, sell) / Math.min(buy, sell) > 1.3) throw new Error('taline-inconsistent');
+    const payload = { ok: true, buy, sell, updatedAt: Date.now(), stale: false };
+    talineCache.set('last-good', { at: Date.now(), payload });
+    return sendJson(res, 200, payload);
+  } catch (e) {
+    if (hit && Date.now() - hit.at < TALINE_STALE_TTL) {
+      return sendJson(res, 200, { ...hit.payload, stale: true, error: e.message });
+    }
+    return sendJson(res, 200, { ok: false, error: e.message, ts: Date.now() });
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   const urlPath = (req.url || '/').split('?')[0].split('#')[0];
 
@@ -794,6 +901,8 @@ const server = http.createServer(async (req, res) => {
   // v1.3.0 — پروکسی خواندن بلاکچین (تون / فایل‌کوین)
   if (urlPath === '/bc/ton') return handleBcTon(res, new URL(req.url, 'http://x').searchParams);
   if (urlPath === '/bc/filecoin') return handleBcFil(res, new URL(req.url, 'http://x').searchParams);
+  // v1.3.6 — قیمت خرید/فروش طلای آب‌شده از طلاین (بخش دارایی ریالی)
+  if (urlPath === '/taline-gold') return handleTalineGold(res);
 
   if (urlPath === '/health' || urlPath === '/api/health') {
     const hasDist = fs.existsSync(path.join(DIST, 'index.html'));
@@ -801,7 +910,7 @@ const server = http.createServer(async (req, res) => {
       status: 'ok',
       service: 'asset-management web + price proxy',
       web: hasDist ? 'ready' : 'dist missing (run: npx expo export --platform web)',
-      endpoints: ['/nobitex/usdt-toman', '/alanchand/usdt-toman', '/ip-check', '/github-release', '/cg-icons', '/cg-icon', '/bc/ton', '/bc/filecoin'],
+      endpoints: ['/nobitex/usdt-toman', '/alanchand/usdt-toman', '/ip-check', '/github-release', '/cg-icons', '/cg-icon', '/bc/ton', '/bc/filecoin', '/taline-gold'],
     });
   }
 
