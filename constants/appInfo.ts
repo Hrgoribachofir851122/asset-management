@@ -14,7 +14,7 @@ export const APP_SOURCE = 'استخراج‌شده از اپ پامپی (pampay-
 
 /** نسخه دقیق نصب‌شده — از پیکربندی Native (app.json هنگام بیلد) */
 export const APP_VERSION: string =
-  (Constants.expoConfig?.version as string | undefined) ?? '1.3.4';
+  (Constants.expoConfig?.version as string | undefined) ?? '1.3.5';
 
 /** versionCode اندروید (برای نمایش «نسخه 1.3.1 (5)») */
 export const APP_VERSION_CODE: number =

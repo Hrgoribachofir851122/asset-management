@@ -295,6 +295,8 @@ async function fetchMexc(w: ForeignWallet): Promise<ForeignBalance[]> {
     }>) {
       pushBalance(out, String(b.asset ?? ''), toNum(b.free), toNum(b.locked));
     }
+    // v1.5.6 — بخش فیوچرز (کیف قرارداد) مثل خود صرافی
+    for (const f of await mexcFuturesBestEffort(w)) out.push(f);
     return out;
   }
   const code = String(body.code ?? '');
@@ -314,6 +316,47 @@ async function fetchMexc(w: ForeignWallet): Promise<ForeignBalance[]> {
     );
   }
   throw new Error(`خطای MEXC (کد ${code}): ${String(body.msg ?? res.status)}`);
+}
+
+// ---------------------------------------------------------------------------
+// v1.5.6 — «دارایی در همه بخش‌های اون صرافی مثل خود صرافی» — فیوچرز
+// هر صرافی best-effort خوانده می‌شود؛ خطا هرگز موجودی اسپات را نمی‌بَرد
+// (try/catch) و فقط وقتی داده برمی‌گردد ردیف‌های «فیوچرز» اضافه می‌شوند.
+// ---------------------------------------------------------------------------
+
+async function mexcFuturesBestEffort(w: ForeignWallet): Promise<ForeignBalance[]> {
+  try {
+    const ts = (await exchangeNow('mexc')).toString();
+    const path = '/api/v1/private/account/assets';
+    const sig = hmacSha256Hex(w.apiSecret, `${ts}GET${path}`);
+    const res = await rawFetch(`https://contract.mexc.com${path}`, {
+      headers: { ApiKey: w.apiKey, 'Request-Time': ts, Signature: sig },
+    });
+    const body = parseJson(res.text);
+    const rows = asArray((body?.data ?? body) as unknown);
+    const out: ForeignBalance[] = [];
+    for (const r of rows as Array<Record<string, unknown>>) {
+      const asset = String(r.currency ?? r.asset ?? '').toUpperCase();
+      if (!asset) continue;
+      const equity = toNum(r.equity);
+      const balance = toNum(r.balance);
+      const available = toNum(r.available);
+      const total = equity > 0 ? equity : balance;
+      if (total <= 0.000001) continue;
+      const free = available > 0 ? Math.min(available, total) : 0;
+      out.push({
+        asset,
+        free,
+        locked: Math.max(total - free, 0),
+        total,
+        valueUsd: asset === 'USDT' ? total : 0,
+        section: 'futures',
+      });
+    }
+    return out;
+  } catch {
+    return [];
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -351,6 +394,36 @@ async function fetchKucoin(w: ForeignWallet): Promise<ForeignBalance[]> {
         section
       );
     }
+    // v1.5.6 — بخش فیوچرز (api-futures.kucoin.com) مثل خود صرافی
+    try {
+      const fpath = '/api/v1/account-overview';
+      const fts = Date.now().toString();
+      const fres = await rawFetch(`https://api-futures.kucoin.com${fpath}`, {
+        headers: {
+          'KC-API-KEY': w.apiKey,
+          'KC-API-SIGN': hmacSha256B64(w.apiSecret, `${fts}GET${fpath}`),
+          'KC-API-TIMESTAMP': fts,
+          'KC-API-PASSPHRASE': hmacSha256B64(w.apiSecret, w.passphrase ?? ''),
+          'KC-API-KEY-VERSION': '2',
+        },
+      });
+      const fbody = parseJson(fres.text);
+      const fd = (fbody?.data ?? {}) as Record<string, unknown>;
+      if (String(fbody?.code ?? '') === '200000') {
+        const equity = toNum(fd.accountEquity) || toNum(fd.accountEquityTotal);
+        const avail = toNum(fd.availableBalance);
+        if (equity > 0.000001) {
+          out.push({
+            asset: 'USDT',
+            free: Math.min(avail, equity),
+            locked: Math.max(equity - avail, 0),
+            total: equity,
+            valueUsd: equity,
+            section: 'futures',
+          });
+        }
+      }
+    } catch {}
     return out;
   }
   const code = String(body.code ?? '');
@@ -556,6 +629,31 @@ async function fetchGateio(w: ForeignWallet): Promise<ForeignBalance[]> {
         toNum(d.locked)
       );
     }
+    // v1.5.6 — بخش فیوچرز (USDT-M) مثل خود صرافی
+    try {
+      const fpath = '/api/v4/futures/usdt/accounts';
+      const fs = Math.floor(Date.now() / 1000).toString();
+      const fsign = hmacSha512Hex(
+        w.apiSecret,
+        ['GET', fpath, '', CryptoJS.SHA512('').toString(), fs].join('\n')
+      );
+      const fres = await rawFetch(`https://api.gateio.ws${fpath}`, {
+        headers: { KEY: w.apiKey, SIGN: fsign, Timestamp: fs },
+      });
+      const fbody = parseJson(fres.text) as Record<string, unknown> | null;
+      const total = toNum(fbody?.total);
+      const available = toNum(fbody?.available);
+      if (total > 0.000001) {
+        out.push({
+          asset: 'USDT',
+          free: Math.min(available, total),
+          locked: Math.max(total - available, 0),
+          total,
+          valueUsd: total,
+          section: 'futures',
+        });
+      }
+    } catch {}
     return out;
   }
   const err = (bodyJson ?? {}) as Record<string, unknown>;
@@ -670,6 +768,41 @@ async function fetchHtx(w: ForeignWallet): Promise<ForeignBalance[]> {
       break;
     }
   }
+  // v1.5.6 — بخش فیوچرز (USDT-M linear swap روی api.hbdm.com) مثل خود صرافی
+  // پاسخ «به ازای هر قرارداد» یک ردیف دارد — بر اساس margin_asset جمع می‌شود
+  // (وگرنه ده‌ها ردیف تکراری USDT روی تب فیوچرز می‌آمد).
+  try {
+    const fdata = await htxSignedGet(
+      'api.hbdm.com',
+      '/linear-swap-api/v1/swap_account_info',
+      w
+    );
+    if (fdata && fdata.status === 'ok' && Array.isArray(fdata.data)) {
+      const futTotals: Record<string, { total: number; avail: number }> = {};
+      for (const r of fdata.data as Array<Record<string, unknown>>) {
+        const asset = String(r.margin_asset ?? '').toUpperCase();
+        if (!asset) continue;
+        const total = toNum(r.margin_balance);
+        const avail = toNum(r.margin_available);
+        if (total <= 0) continue;
+        const agg = futTotals[asset] ?? { total: 0, avail: 0 };
+        agg.total += total;
+        agg.avail += avail > 0 ? avail : 0;
+        futTotals[asset] = agg;
+      }
+      for (const [asset, agg] of Object.entries(futTotals)) {
+        if (agg.total <= 0.000001) continue;
+        out.push({
+          asset,
+          free: Math.min(agg.avail, agg.total),
+          locked: Math.max(agg.total - Math.min(agg.avail, agg.total), 0),
+          total: agg.total,
+          valueUsd: asset === 'USDT' ? agg.total : 0,
+          section: 'futures',
+        });
+      }
+    }
+  } catch {}
   return out;
 }
 
@@ -736,6 +869,38 @@ async function fetchBingx(w: ForeignWallet): Promise<ForeignBalance[]> {
     }>) {
       pushBalance(out, String(b.asset ?? ''), toNum(b.free), toNum(b.locked));
     }
+    // v1.5.6 — بخش فیوچرز (swap) مثل خود صرافی
+    try {
+      const fqs = `recvWindow=10000&timestamp=${Date.now()}`;
+      const fsig = hmacSha256Hex(w.apiSecret, fqs);
+      const fres = await rawFetch(
+        `https://open-api.bingx.com/openApi/swap/v2/user/balance?${fqs}&signature=${fsig}`,
+        { headers: { 'X-BX-APIKEY': w.apiKey } }
+      );
+      const fbody = parseJson(fres.text);
+      if (fbody && String(fbody.code ?? '') === '0') {
+        const fdata = fbody.data as unknown;
+        const frows = Array.isArray(fdata)
+          ? fdata
+          : asArray((fdata as Record<string, unknown> | null)?.balance);
+        for (const r of frows as Array<Record<string, unknown>>) {
+          const asset = String(r.asset ?? '').toUpperCase();
+          const equity = toNum(r.equity);
+          const totalBal = toNum(r.balance);
+          const avail = toNum(r.availableMargin);
+          const total = equity > 0 ? equity : totalBal;
+          if (!asset || total <= 0.000001) continue;
+          out.push({
+            asset,
+            free: Math.min(avail > 0 ? avail : total, total),
+            locked: Math.max(total - (avail > 0 ? avail : total), 0),
+            total,
+            valueUsd: asset === 'USDT' ? total : 0,
+            section: 'futures',
+          });
+        }
+      }
+    } catch {}
     if (out.length > 0 || String(body.code) === '0') return out;
   }
   const code = String(body.code ?? '');
@@ -1705,7 +1870,10 @@ async function fetchIranicart(w: ForeignWallet): Promise<ForeignBalance[]> {
           const locked = toNum(row.blockedBalance);
           if (!currency || free + locked <= 0) continue;
           if (currency === 'rls' || currency === 'irt') {
-            pushBalance(out, 'IRT', currency === 'rls' ? free / 10 : free, 0, 'spot', 0);
+            // v1.5.6 — ردیف تومان ایرانیکارت مثل بقیه صرافی‌های ایرانی با نرخ
+            // لحظه‌ای تتر دلاری می‌شود (قبلاً ارزش دلاری‌اش صفر می‌ماند)
+            const rate = await usdtToTomanRate();
+            pushTomanRow(out, currency === 'rls' ? 'IRR' : 'IRT', free, locked, rate);
           } else {
             pushBalance(out, currency, free, locked);
           }

@@ -104,6 +104,11 @@ type WalletSection = 'spot' | 'earn' | 'funding' | 'futures' | 'alpha' | 'copy';
 
 interface WalletBalance {
   asset: string;
+  /** v1.5.6 — سیمبل جهانی برای resolving آیکون/قیمت وقتی نام نمایشی فارسی است
+   *  (مثلا «تتر» در صرافی‌های ایرانی → iconSymbol: 'USDT' تا آیکون واقعی
+   *  تتر و درصد تغییر دلاری‌اش درست بیاید — «با آیکون اصلی ارز نشان داده
+   *  نمیشد» فقط برای همین ردیف‌های فارسی‌نام بود). */
+  iconSymbol?: string;
   /** Which exchange account the asset lives in (اسپات/Earn/فاندینگ/فیوچرز/آلفا). */
   section?: WalletSection;
   free: number;
@@ -1033,6 +1038,8 @@ async function fetchBybitBalance(wallet: ExchangeWallet): Promise<WalletBalance[
               if (total > 0.0001) {
                 balances.push({
                   asset: c.coin ?? '',
+                  // v1.5.6 — حساب UNIFIED همان بخش اسپات در اپ بای‌بیت است
+                  section: 'spot',
                   free,
                   locked: total - free,
                   total,
@@ -1104,14 +1111,15 @@ async function fetchBybitBalance(wallet: ExchangeWallet): Promise<WalletBalance[
   }
 
   // v1.4.3 — Bybit Earn (best-effort): the app previously ignored earn assets.
-  // Tries the earn order endpoint; silently skipped when unavailable/empty.
-  try {
-    const earnQuery = 'category=flexible&limit=50';
-    const earnPreSign = `${timestamp}${wallet.apiKey}${recvWindow}${earnQuery}`;
-    const earnSignature = CryptoJS.HmacSHA256(earnPreSign, wallet.apiSecret).toString(
+  // v1.5.6 — the REAL holdings come from /v5/earn/position (Flexible + Fixed);
+  // the old /v5/earn/order endpoint stays as a fallback (it lists ORDERS, not
+  // positions — products the user actually HOLDS were invisible).
+  const bybitEarnSignedFetch = async (query: string) => {
+    const preSign = `${timestamp}${wallet.apiKey}${recvWindow}${query}`;
+    const earnSignature = CryptoJS.HmacSHA256(preSign, wallet.apiSecret).toString(
       CryptoJS.enc.Hex
     );
-    const earnRes = await fetch(`https://api.bybit.com/v5/earn/order?${earnQuery}`, {
+    return fetch(`https://api.bybit.com/v5/earn/position?${query}`, {
       headers: {
         'X-BAPI-API-KEY': wallet.apiKey,
         'X-BAPI-SIGN': earnSignature,
@@ -1120,26 +1128,66 @@ async function fetchBybitBalance(wallet: ExchangeWallet): Promise<WalletBalance[
         'X-BAPI-RECV-WINDOW': recvWindow,
       },
     });
-    if (earnRes.ok) {
-      const earnData = await earnRes.json();
-      const list = earnData?.result?.list;
-      if (Array.isArray(list)) {
-        for (const item of list) {
-          const asset = String(item.coin ?? item.asset ?? '').toUpperCase();
-          const amount = parseFloat(
-            String(item.amount ?? item.activeAmount ?? item.holdAmount ?? '0')
-          );
-          if (asset && amount > 0.0001) {
-            balances.push({
-              asset,
-              section: 'earn',
-              free: amount,
-              locked: 0,
-              total: amount,
-              valueUsd: 0,
-            });
+  };
+  const pushBybitEarnRows = (list: Array<Record<string, unknown>>) => {
+    for (const item of list) {
+      const asset = String(item.coin ?? item.asset ?? '').toUpperCase();
+      const amount = parseFloat(
+        String(item.amount ?? item.activeAmount ?? item.holdAmount ?? '0')
+      );
+      if (asset && amount > 0.0001) {
+        const existing = balances.find((b) => b.section === 'earn' && b.asset === asset);
+        if (existing) {
+          existing.free += amount;
+          existing.total += amount;
+        } else {
+          balances.push({
+            asset,
+            section: 'earn',
+            free: amount,
+            locked: 0,
+            total: amount,
+            valueUsd: 0,
+          });
+        }
+      }
+    }
+  };
+  try {
+    let earnRows = 0;
+    for (const category of ['Flexible', 'Fixed']) {
+      try {
+        const earnRes = await bybitEarnSignedFetch(`category=${category}&limit=50`);
+        if (earnRes.ok) {
+          const earnData = await earnRes.json();
+          const list = earnData?.result?.list;
+          if (Array.isArray(list)) {
+            earnRows += list.length;
+            pushBybitEarnRows(list);
           }
         }
+      } catch {}
+    }
+    // Fallback: the legacy order endpoint (when position answers empty/error).
+    if (earnRows === 0) {
+      const earnQuery = 'category=flexible&limit=50';
+      const earnPreSign = `${timestamp}${wallet.apiKey}${recvWindow}${earnQuery}`;
+      const earnSignature = CryptoJS.HmacSHA256(earnPreSign, wallet.apiSecret).toString(
+        CryptoJS.enc.Hex
+      );
+      const earnRes = await fetch(`https://api.bybit.com/v5/earn/order?${earnQuery}`, {
+        headers: {
+          'X-BAPI-API-KEY': wallet.apiKey,
+          'X-BAPI-SIGN': earnSignature,
+          'X-BAPI-SIGN-TYPE': '2',
+          'X-BAPI-TIMESTAMP': timestamp,
+          'X-BAPI-RECV-WINDOW': recvWindow,
+        },
+      });
+      if (earnRes.ok) {
+        const earnData = await earnRes.json();
+        const list = earnData?.result?.list;
+        if (Array.isArray(list)) pushBybitEarnRows(list);
       }
     }
   } catch (e) {
@@ -1407,6 +1455,101 @@ async function fetchOkxBalance(wallet: ExchangeWallet): Promise<WalletBalance[]>
   return balances;
 }
 
+// ---------------------------------------------------------------------------
+// v1.5.6 — «دارایی در همه بخش‌های اون صرافی مثل خود صرافی»: پوزیشن‌های باز
+// فیوچرز بای‌بیت و OKX هم مثل بایننس روی کارت صرافی نشان داده می‌شوند.
+// هر دو best-effort هستند — خطا هرگز موجودی را نمی‌بَرد.
+// ---------------------------------------------------------------------------
+
+async function fetchBybitFuturesPositions(
+  wallet: ExchangeWallet
+): Promise<FuturesPosition[]> {
+  const out: FuturesPosition[] = [];
+  try {
+    const qs = 'category=linear&limit=200';
+    const timestamp = Date.now().toString();
+    const recvWindow = '10000';
+    const preSign = `${timestamp}${wallet.apiKey}${recvWindow}${qs}`;
+    const signature = CryptoJS.HmacSHA256(preSign, wallet.apiSecret).toString(
+      CryptoJS.enc.Hex
+    );
+    const res = await fetch(`https://api.bybit.com/v5/position/list?${qs}`, {
+      headers: {
+        'X-BAPI-API-KEY': wallet.apiKey,
+        'X-BAPI-SIGN': signature,
+        'X-BAPI-SIGN-TYPE': '2',
+        'X-BAPI-TIMESTAMP': timestamp,
+        'X-BAPI-RECV-WINDOW': recvWindow,
+      },
+    });
+    if (!res.ok) return out;
+    const data = await res.json();
+    const list = data?.result?.list;
+    if (!Array.isArray(list)) return out;
+    for (const p of list) {
+      const size = parseFloat(String(p.size ?? '0'));
+      const notional = Math.abs(parseFloat(String(p.positionValue ?? '0')));
+      if (size === 0 || notional <= 0) continue;
+      const entryPrice = parseFloat(String(p.entryPrice ?? '0'));
+      const markPrice = parseFloat(String(p.markPrice ?? '0'));
+      const upnl = parseFloat(String(p.unrealisedPnl ?? '0'));
+      const leverage = parseFloat(String(p.leverage ?? '1')) || 1;
+      // ROE = uPnL / initial margin (notional / leverage)
+      const initMargin = notional / leverage;
+      const roePercent = initMargin > 0 ? (upnl / initMargin) * 100 : 0;
+      const side = String(p.positionSide ?? '').toLowerCase();
+      out.push({
+        symbol: String(p.symbol ?? ''),
+        positionSide: side === 'buy' ? 'LONG' : side === 'sell' ? 'SHORT' : 'BOTH',
+        leverage: Math.round(leverage),
+        entryPrice,
+        markPrice,
+        notionalUsd: notional,
+        unrealizedPnl: upnl,
+        roePercent,
+      });
+    }
+  } catch (e) {
+    console.log('[Wallet] Bybit positions fetch error:', e);
+  }
+  return out;
+}
+
+async function fetchOkxFuturesPositions(
+  wallet: ExchangeWallet
+): Promise<FuturesPosition[]> {
+  const out: FuturesPosition[] = [];
+  try {
+    const requestPath = '/api/v5/account/positions';
+    const res = await fetch(`https://www.okx.com${requestPath}`, {
+      headers: okxHeaders(wallet, new Date().toISOString(), 'GET', requestPath),
+    });
+    if (!res.ok) return out;
+    const data = await res.json();
+    const rows = data?.data;
+    if (!Array.isArray(rows)) return out;
+    for (const p of rows) {
+      const pos = parseFloat(String(p.pos ?? '0'));
+      const notional = Math.abs(parseFloat(String(p.notionalUsd ?? '0')));
+      if (pos === 0 || notional <= 0) continue;
+      const side = String(p.posSide ?? 'net').toLowerCase();
+      out.push({
+        symbol: String(p.instId ?? ''),
+        positionSide: side === 'long' ? 'LONG' : side === 'short' ? 'SHORT' : 'BOTH',
+        leverage: Math.round(parseFloat(String(p.lever ?? '1')) || 1),
+        entryPrice: parseFloat(String(p.avgPx ?? '0')),
+        markPrice: parseFloat(String(p.markPx ?? '0')),
+        notionalUsd: notional,
+        unrealizedPnl: parseFloat(String(p.upl ?? '0')),
+        roePercent: (parseFloat(String(p.uplRatio ?? '0')) || 0) * 100,
+      });
+    }
+  } catch (e) {
+    console.log('[Wallet] OKX positions fetch error:', e);
+  }
+  return out;
+}
+
 async function fetchOkxPeriodPnl(wallet: ExchangeWallet, days: PnlPeriodDays): Promise<PeriodPnl> {
   const windowStart = periodStartMs(days);
   let realizedPnl = 0;
@@ -1573,6 +1716,7 @@ async function fetchNobitexBalance(wallet: ExchangeWallet): Promise<WalletBalanc
       const valueUsd = usdtToToman > 0 ? toman / usdtToToman : 0;
       balances.push({
         asset: 'تومان',
+        iconSymbol: 'IRT',
         free: currency === 'rls' ? free / 10 : free,
         locked: currency === 'rls' ? locked / 10 : locked,
         total: toman,
@@ -1585,6 +1729,8 @@ async function fetchNobitexBalance(wallet: ExchangeWallet): Promise<WalletBalanc
       const valueUsd = stable !== null ? stable : (priceMap[`${currency.toUpperCase()}USDT`] ?? 0) * total;
       balances.push({
         asset: assetName,
+        // v1.5.6 — آیکون واقعی تتر (نوبیتکس) — resolving با USDT
+        iconSymbol: currency === 'usdt' ? 'USDT' : undefined,
         free,
         locked,
         total,
@@ -1624,6 +1770,7 @@ async function fetchArzinjaWalletBalance(wallet: ExchangeWallet): Promise<Wallet
       if (toman <= 0) continue;
       balances.push({
         asset: 'تومان',
+        iconSymbol: 'IRT',
         free: row.asset === 'IRR' ? row.free / 10 : row.free,
         locked: row.asset === 'IRR' ? row.locked / 10 : row.locked,
         total: toman,
@@ -1642,6 +1789,8 @@ async function fetchArzinjaWalletBalance(wallet: ExchangeWallet): Promise<Wallet
           : (priceMap[`${row.asset}USDT`] ?? 0) * row.total;
     balances.push({
       asset: assetName,
+      // v1.5.6 — آیکون واقعی تتر: resolving با سیمبل جهانی USDT نه نام فارسی
+      iconSymbol: row.asset === 'USDT' ? 'USDT' : undefined,
       free: row.free,
       locked: row.locked,
       total: row.total,
@@ -2013,6 +2162,8 @@ async function fetchExchangeBalance(wallet: ExchangeWallet): Promise<ExchangeBal
 
   let balances: WalletBalance[] = [];
   let account: BinanceFullAccount | null = null;
+  // v1.5.6 — پوزیشن‌های باز فیوچرز بای‌بیت/OKX (مثل بایننس روی کارت می‌آیند)
+  let extraPositions: FuturesPosition[] = [];
 
   try {
     switch (wallet.exchangeId) {
@@ -2022,9 +2173,11 @@ async function fetchExchangeBalance(wallet: ExchangeWallet): Promise<ExchangeBal
         break;
       case 'bybit':
         balances = await fetchBybitBalance(wallet);
+        extraPositions = await fetchBybitFuturesPositions(wallet);
         break;
       case 'okx':
         balances = await fetchOkxBalance(wallet);
+        extraPositions = await fetchOkxFuturesPositions(wallet);
         break;
       case 'arzinja':
         balances = await fetchArzinjaWalletBalance(wallet);
@@ -2097,6 +2250,12 @@ async function fetchExchangeBalance(wallet: ExchangeWallet): Promise<ExchangeBal
     result.totalPnlUsd = account.totalPnlUsd;
     result.pnlNote =
       'PnL تقریبی بر اساس تاریخچه معاملات اسپات + پوزیشن‌های باز و سود/زیان محقق‌شده فیوچرز';
+  }
+
+  // v1.5.6 — بای‌بیت/OKX: پوزیشن‌های باز فیوچرز مثل خود صرافی نشان داده می‌شوند
+  if (extraPositions.length > 0) {
+    result.futuresPositions = extraPositions;
+    result.futuresUnrealizedPnl = extraPositions.reduce((s, p) => s + p.unrealizedPnl, 0);
   }
 
   return result;
@@ -3405,9 +3564,16 @@ function WalletItem({
   }, [wallet.exchangeId, data]);
 
   // Only the sections that actually hold something get a tab.
+  // v1.5.6 — تب «فیوچرز» حتی وقتی موجودی مستقیم ندارد هم می‌آید اگر پوزیشن
+  // باز وجود داشته باشد (OKX/Bybit با حساب اسپات‌محور) — «دارایی در همه
+  // بخش‌های اون صرافی مثل خود صرافی نشان داده بشه».
   const presentSections = useMemo(() => {
     if (!data) return [] as WalletSection[];
-    return SECTION_ORDER.filter((s) => data.balances.some((b) => (b.section ?? 'spot') === s));
+    const tabs = SECTION_ORDER.filter((s) => data.balances.some((b) => (b.section ?? 'spot') === s));
+    if ((data.futuresPositions?.length ?? 0) > 0 && !tabs.includes('futures')) {
+      tabs.push('futures');
+    }
+    return tabs;
   }, [data]);
 
   // «همه» — one row per asset summed across sections
@@ -3759,7 +3925,9 @@ function WalletItem({
                       )}
                     </View>
                   )}
-                  {sectionRows.length === 0 && (
+                  {sectionRows.length === 0 && !(
+                    activeSection === 'futures' && futuresPositions.length > 0
+                  ) && (
                     <Text style={styles.noBalance}>در این بخش موجودی‌ای نیست</Text>
                   )}
                 </>
@@ -3828,6 +3996,9 @@ function SpinningRefreshIcon({ size = 16, color }: { size?: number; color: strin
 // ---------------------------------------------------------------------------
 function AssetIcon({ symbol }: { symbol: string }) {
   const sym = symbol.toUpperCase();
+  // v1.5.6 — ردیف تومان (صرافی‌های ایرانی): resolving شبکه‌ای لازم ندارد —
+  // نشان «ت» طلایی مستقیم (جلوگیری از درخواست بی‌فایده و کش منفی)
+  const isTomanFiat = symbol === 'تومان' || sym === 'IRT' || sym === 'IRR';
   const q = useQuery({
     queryKey: ['asset-icon', sym],
     queryFn: () => getAssetIconUrls([sym]),
@@ -3839,6 +4010,7 @@ function AssetIcon({ symbol }: { symbol: string }) {
     refetchOnMount: 'always',
     retry: 2,
     retryDelay: 1200,
+    enabled: !isTomanFiat,
   });
   const directUrl = q.data?.[sym];
   // v1.7.0 — fallback پروکسی بایت تصویر
@@ -3938,11 +4110,13 @@ function BalanceRow({
 }) {
   const hasReturn =
     bal.avgCost !== undefined && bal.avgCost > 0 && bal.pnlPercent !== undefined;
+  // v1.5.6 — آیکون/درصد تغییر با سیمبل جهانی (تتر → USDT)، نام نمایشی فارسی می‌ماند
+  const resolveSym = bal.iconSymbol ?? bal.asset;
   return (
     <View style={styles.balanceRow}>
       {/* گروه راست: آیکون واقعی + نام کنار آن (مثل ردیف‌های کیف پول) */}
       <View style={styles.assetLeftGroup}>
-        <AssetIcon symbol={bal.asset} />
+        <AssetIcon symbol={resolveSym} />
         <View style={styles.assetNameCol}>
           <Text style={styles.assetName} numberOfLines={1}>
             {bal.asset}
@@ -3979,7 +4153,7 @@ function BalanceRow({
         <Text style={styles.balanceValue} numberOfLines={1} adjustsFontSizeToFit>
           ≈ ${bal.valueUsd.toLocaleString('en-US', { maximumFractionDigits: 2 })}
         </Text>
-        <AssetPeriodChangePct asset={bal.asset} days={pnlPeriodDays} />
+        <AssetPeriodChangePct asset={resolveSym} days={pnlPeriodDays} />
       </View>
     </View>
   );
@@ -4003,11 +4177,13 @@ function AggregatedRow({
     bal.sections.length > 1 || (bal.sections.length === 1 && bal.sections[0] !== 'spot');
   const hasReturn =
     bal.avgCost !== undefined && bal.avgCost > 0 && bal.pnlPercent !== undefined;
+  // v1.5.6 — آیکون/درصد تغییر با سیمبل جهانی (تتر → USDT)
+  const resolveSym = bal.iconSymbol ?? bal.asset;
   return (
     <View style={styles.balanceRow}>
       {/* گروه راست: آیکون واقعی + نام کنار آن (مثل ردیف‌های کیف پول) */}
       <View style={styles.assetLeftGroup}>
-        <AssetIcon symbol={bal.asset} />
+        <AssetIcon symbol={resolveSym} />
         <View style={styles.assetNameCol}>
           <Text style={styles.assetName} numberOfLines={1}>
             {bal.asset}
@@ -4044,7 +4220,7 @@ function AggregatedRow({
         <Text style={styles.balanceValue} numberOfLines={1} adjustsFontSizeToFit>
           ≈ ${bal.valueUsd.toLocaleString('en-US', { maximumFractionDigits: 2 })}
         </Text>
-        <AssetPeriodChangePct asset={bal.asset} days={pnlPeriodDays} />
+        <AssetPeriodChangePct asset={resolveSym} days={pnlPeriodDays} />
       </View>
     </View>
   );
