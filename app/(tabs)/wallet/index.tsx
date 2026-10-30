@@ -2494,6 +2494,18 @@ export default function WalletScreen() {
   const [bcManualRefresh, setBcManualRefresh] = useState<Record<string, boolean>>({});
   const [bcRefreshToast, setBcRefreshToast] = useState<string | null>(null);
   const bcRefreshToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // v1.8.0 — busy دستی برای دکمهٔ رفرش کل کیف‌ها (با سقف زمانی — هیچ‌وقت قفل
+  // نمی‌ماند) + آزادسازی به‌محض پایان همهٔ فچ‌های دستی.
+  const [bcAllRefreshBusy, setBcAllRefreshBusy] = useState(false);
+  const bcAllRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!bcAllRefreshBusy) return;
+    const anyManual = Object.values(bcManualRefresh).some(Boolean);
+    if (!anyManual) {
+      if (bcAllRefreshTimer.current) clearTimeout(bcAllRefreshTimer.current);
+      setBcAllRefreshBusy(false);
+    }
+  }, [bcManualRefresh, bcAllRefreshBusy]);
   const bcWalletsRef = useRef<BlockchainWallet[]>(bcWallets);
   bcWalletsRef.current = bcWallets;
 
@@ -2638,10 +2650,16 @@ export default function WalletScreen() {
   );
 
   const handleRefreshBlockchainAll = useCallback(() => {
+    if (bcAllRefreshBusy) return;
+    setBcAllRefreshBusy(true);
+    // v1.8.0 — سقف ۳۰ ثانیه؛ اگر یکی از فچ‌ها معلق بماند دکمه برای همیشه
+    // «کور» نمی‌شود (علت اصلی «دکمه رفرش کار نمی‌کند» در بخش کیف پول).
+    if (bcAllRefreshTimer.current) clearTimeout(bcAllRefreshTimer.current);
+    bcAllRefreshTimer.current = setTimeout(() => setBcAllRefreshBusy(false), 30_000);
     bcWallets.forEach((w) => {
       void runBlockchainManualFetch(w.id, true);
     });
-  }, [bcWallets, runBlockchainManualFetch]);
+  }, [bcWallets, runBlockchainManualFetch, bcAllRefreshBusy]);
 
   // v1.4.19 — «دکمه رفرش هر کیف کار نمیده» ROOT fix: direct fetch + forced
   // fresh prices + visible toast/spinner (see runBlockchainManualFetch).
@@ -2792,7 +2810,19 @@ export default function WalletScreen() {
   // v1.7.0 — فیدبک واقعی برای دکمه رفرش «مجموع دارایی‌ها»: آیکون می‌چرخد تا
   // پایان همهٔ رفرش‌ها (کاربر می‌گفت «دکمه رفرش کار نمی‌کند» — قبلاً هیچ
   // نشانه‌ای نداشت و PnL هم رفرش نمی‌شد).
+  //
+  // v1.8.0 — «دکمه رفرش کل دارایی در بخش کیف پول هم کار نمیکنه» — سه لایهٔ
+  // اصلاح:
+  //   ۱) سقف ۲۵ ثانیه روی await — با ریتری‌های کند شبکه، چرخش آیکون ممکن بود
+  //      خیلی طول بکشد و دکمه «مرده» به نظر برسد؛ بعد از سقف دکمه آزاد
+  //      می‌شود و بقیهٔ رفرش‌ها در پس‌زمینه تمام می‌شوند.
+  //   ۲) پیام گذرا «دارایی‌ها به‌روز شد ✓» بعد از پایان — کاربر «دیدنی»
+  //      می‌فهمد رفرش انجام شده حتی وقتی عددها تغییری نکرده‌اند.
+  //   ۳) خط «آخرین به‌روزرسانی: ساعت» داخل کارت مجموع — همیشه مرجع واقعی.
   const [refreshingAll, setRefreshingAll] = useState(false);
+  const [lastAllRefreshAt, setLastAllRefreshAt] = useState<number | null>(null);
+  const [refreshAllToast, setRefreshAllToast] = useState<string | null>(null);
+  const refreshAllToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleRefreshAll = useCallback(async () => {
     // v1.2.0 — با IP تحریمی رفرشِ بخش صرافی‌ها هیچ درخواستی نمی‌زند (فقط پیغام)
     if (ipBlocked) {
@@ -2810,19 +2840,26 @@ export default function WalletScreen() {
     setRefreshingAll(true);
     try {
       // v1.7.0 — با کلیدِ پیشوندی «همهٔ» صرافی‌ها (نه حلقه روی لیست فعلی) +
-      // سود/زیان و درصد تغییرات تایم‌فریم هم تازه می‌شود؛ await تا چرخش
-      // آیکون دقیقاً تا پایان رفرش‌ها ادامه پیدا کند.
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['exchange-balance'], refetchType: 'all' }),
-        queryClient.invalidateQueries({ queryKey: ['exchange-pnl'], refetchType: 'all' }),
-        queryClient.invalidateQueries({ queryKey: ['asset-change'], refetchType: 'all' }),
-        queryClient.invalidateQueries({ queryKey: ['usdt-toman-price'], refetchType: 'all' }),
-        queryClient.invalidateQueries({ queryKey: ['iran-market-prices'], refetchType: 'all' }),
+      // سود/زیان و درصد تغییرات تایم‌فریم هم تازه می‌شود.
+      // v1.8.0 — سقف ۲۵ ثانیه با Promise.race تا دکمه هیچ‌وقت قفل نشود.
+      await Promise.race([
+        Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['exchange-balance'], refetchType: 'all' }),
+          queryClient.invalidateQueries({ queryKey: ['exchange-pnl'], refetchType: 'all' }),
+          queryClient.invalidateQueries({ queryKey: ['asset-change'], refetchType: 'all' }),
+          queryClient.invalidateQueries({ queryKey: ['usdt-toman-price'], refetchType: 'all' }),
+          queryClient.invalidateQueries({ queryKey: ['iran-market-prices'], refetchType: 'all' }),
+        ]),
+        new Promise((r) => setTimeout(r, 25_000)),
       ]);
+      setLastAllRefreshAt(Date.now());
+      setRefreshAllToast('دارایی‌ها به‌روز شد ✓');
+      if (refreshAllToastTimer.current) clearTimeout(refreshAllToastTimer.current);
+      refreshAllToastTimer.current = setTimeout(() => setRefreshAllToast(null), 3500);
     } catch {} finally {
       setRefreshingAll(false);
     }
-  }, [wallets, ipBlocked, queryClient, refreshingAll]);
+  }, [ipBlocked, queryClient, refreshingAll]);
 
   // هشدار فیلترشکن فقط وقتی معنی دارد که صرافی خارجی متصل است (یا در حال
   // افزودن آن هستیم) — صرافی‌های ایرانی با IP ایران مشکلی ندارند.
@@ -2835,6 +2872,14 @@ export default function WalletScreen() {
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
+      {/* ── v1.8.0 — هدر درون‌صفحه‌ای (جای هدر native):
+          هدر native با inset تکراری یک فضای مردهٔ بزرگ بالای عنوان می‌ساخت.
+          حالا عنوان دقیقاً زیر نوار وضعیت می‌چسبد و بالای صفحه پر می‌شود. ── */}
+      <View style={styles.pageHeader}>
+        <Text style={styles.pageHeaderTitle}>مدیریت دارایی</Text>
+        <View style={styles.pageHeaderAccent} />
+      </View>
+
       {/* ── هشدار امنیتی: فیلترشکن خاموش ──
           v1.3.0 — در دو تب «دارایی ریالی و فلزات» و «پیش‌بینی طلا» پیام سبز
           «این بخش با IP ایران بدون مشکل متصل است» نشان داده می‌شود (منابع
@@ -2975,6 +3020,25 @@ export default function WalletScreen() {
                 <ActivityIndicator size="small" color={colors.dark.accent} />
               )}
             </View>
+
+            {/* ── v1.8.0 — بازخورد رفرش: پیام گذرا + ساعت آخرین به‌روزرسانی ── */}
+            {(refreshAllToast || lastAllRefreshAt !== null) && (
+              <View style={styles.refreshFeedbackRow}>
+                {refreshAllToast ? (
+                  <Text style={styles.refreshFeedbackToast}>{refreshAllToast}</Text>
+                ) : null}
+                {lastAllRefreshAt !== null ? (
+                  <Text style={styles.refreshFeedbackTime}>
+                    آخرین به‌روزرسانی:{' '}
+                    {new Date(lastAllRefreshAt).toLocaleTimeString('fa-IR', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      second: '2-digit',
+                    })}
+                  </Text>
+                ) : null}
+              </View>
+            )}
 
             {/* ── تفکیک هر صرافی: مجموع کل دارایی همان صرافی ── */}
             {wallets.length > 0 && (
@@ -3219,6 +3283,7 @@ export default function WalletScreen() {
           onEditWallet={handleEditBlockchainWallet}
           onRemoveWallet={handleRemoveBlockchainWallet}
           onRefreshAll={handleRefreshBlockchainAll}
+          refreshingAllBusy={bcAllRefreshBusy}
           onRefreshWallet={handleRefreshBlockchainWallet}
           manualRefreshing={bcManualRefresh}
           refreshToast={bcRefreshToast}
@@ -3766,14 +3831,24 @@ function AssetIcon({ symbol }: { symbol: string }) {
   const q = useQuery({
     queryKey: ['asset-icon', sym],
     queryFn: () => getAssetIconUrls([sym]),
-    staleTime: 60 * 60_000,
-    retry: 1,
-    retryDelay: 1500,
+    // v1.8.0 — قبلاً staleTime ۱ ساعت بود؛ اگر آیکونی یک بار resolving
+    // نمی‌شد تا بازشدن دوبارهٔ صفحه نشان حرفی می‌ماند. حالا: جواب موفق
+    // ۱۰ دقیقه کش می‌شود و هر بار بازشدن کارت/صفحه، سمبول‌های بی‌جواب
+    // دوباره تلاش می‌شوند (درخواست‌ها دسته‌ای‌اند — فشار اضافه نمی‌آورد).
+    staleTime: 10 * 60_000,
+    refetchOnMount: 'always',
+    retry: 2,
+    retryDelay: 1200,
   });
   const directUrl = q.data?.[sym];
   // v1.7.0 — fallback پروکسی بایت تصویر
   const [proxyBase, setProxyBase] = useState<string | null>(null);
   const [imgFailed, setImgFailed] = useState(false);
+  // v1.8.0 — اگر CDN کویین‌گکو روی نت گوشی «هنگ» کند (نه خطا بدهد، نه لود
+  // شود — حالت رایج با بعضی ISPهای ایران)، تصویر تا بی‌نهایت نشان حرفی
+  // می‌ماند. با تایمر ۶ ثانیه‌ای، لود‌نشدن هم مثل خطا به پروکسی سرور
+  // می‌افتد تا آیکون واقعی همیشه بیاید.
+  const [imgLoaded, setImgLoaded] = useState(false);
   useEffect(() => {
     let alive = true;
     getServerUrl()
@@ -3791,17 +3866,29 @@ function AssetIcon({ symbol }: { symbol: string }) {
     : imgFailed && proxyBase
       ? `${proxyBase}/cg-icon?url=${encodeURIComponent(directUrl)}`
       : directUrl;
+  useEffect(() => setImgLoaded(false), [url]);
+  useEffect(() => {
+    if (!url || imgLoaded) return;
+    const t = setTimeout(() => {
+      if (!imgLoaded) setImgFailed(true);
+    }, 6_000);
+    return () => clearTimeout(t);
+  }, [url, imgLoaded]);
   return (
     <View style={styles.assetIconWrap}>
       {url ? (
         <Image
           source={{ uri: url }}
           style={styles.assetIconImg}
+          onLoad={() => setImgLoaded(true)}
           onError={() => setImgFailed(true)}
         />
       ) : (
         <View style={styles.assetBadge}>
-          <Text style={styles.assetBadgeText}>{symbol.slice(0, 3)}</Text>
+          <Text style={styles.assetBadgeText}>
+            {/* ردیف تومان (صرافی‌های ایرانی) — نشان «ت» طلایی به‌جای حروف بریده */}
+            {symbol === 'تومان' || sym === 'IRT' ? 'ت' : symbol.slice(0, 3)}
+          </Text>
         </View>
       )}
     </View>
@@ -4421,6 +4508,26 @@ const styles = createThemedStyles(() => StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 40,
   },
+  // v1.8.0 — هدر درون‌صفحه‌ای «مدیریت دارایی»: فشرده، دقیقاً زیر نوار وضعیت،
+  // با خط تأکید کوچک برای حس طراحی تمیز (هم‌خانواده با هدر تب تنظیمات).
+  pageHeader: {
+    alignItems: 'center',
+    paddingTop: 2,
+    paddingBottom: 10,
+  },
+  pageHeaderTitle: {
+    fontSize: 18,
+    fontWeight: '800' as const,
+    color: colors.dark.text,
+    letterSpacing: 0.2,
+  },
+  pageHeaderAccent: {
+    width: 44,
+    height: 3,
+    borderRadius: 2,
+    marginTop: 7,
+    backgroundColor: colors.dark.accent,
+  },
   // v1.4.14 — three top-level tabs (ارز دیجیتال | ریالی و فلزات | پیش‌بینی طلا)
   mainTabBar: {
     flexDirection: 'row',
@@ -4580,6 +4687,24 @@ const styles = createThemedStyles(() => StyleSheet.create({
     fontWeight: '800' as const,
     color: colors.dark.accent,
     letterSpacing: 0.3,
+  },
+  // v1.8.0 — بازخورد رفرش مجموع دارایی‌ها (پیام گذرا + ساعت آخرین به‌روزرسانی)
+  refreshFeedbackRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginTop: 10,
+    marginHorizontal: 4,
+  },
+  refreshFeedbackToast: {
+    fontSize: 12,
+    fontWeight: '800' as const,
+    color: colors.dark.green,
+  },
+  refreshFeedbackTime: {
+    fontSize: 11,
+    color: colors.dark.textMuted,
   },
   portfolioSub: {
     fontSize: 12,

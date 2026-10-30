@@ -1906,9 +1906,16 @@ function chunk<T>(arr: T[], size: number): T[][] {
 async function fetchIconMaps(
   ids: string[],
   symbols: string[]
-): Promise<{ byId: Record<string, string>; bySymbol: Record<string, string> }> {
+): Promise<{
+  byId: Record<string, string>;
+  bySymbol: Record<string, string>;
+  /** v1.8.0 — اگر هر chunk‌ای خطا/HTTP غیر ۲۰۰ داد true است؛ در این حالت
+   *  caller نباید سمبول‌های بی‌جواب را منفی-کش کند. */
+  failed: boolean;
+}> {
   const byId: Record<string, string> = {};
   const bySymbol: Record<string, string> = {};
+  let failed = false;
   const base = (await getServerUrl().catch(() => 'https://asset-management1.up.railway.app')).replace(
     /\/+$/,
     ''
@@ -1926,10 +1933,15 @@ async function fetchIconMaps(
             signal: ctrl.signal,
           });
           clearTimeout(timer);
-          if (!res.ok) return;
+          if (!res.ok) {
+            failed = true;
+            return;
+          }
           const d = (await res.json()) as { byId?: Record<string, string> };
           Object.assign(byId, d?.byId ?? {});
-        } catch {}
+        } catch {
+          failed = true;
+        }
       })()
     );
   }
@@ -1943,15 +1955,20 @@ async function fetchIconMaps(
             signal: ctrl.signal,
           });
           clearTimeout(timer);
-          if (!res.ok) return;
+          if (!res.ok) {
+            failed = true;
+            return;
+          }
           const d = (await res.json()) as { bySymbol?: Record<string, string> };
           Object.assign(bySymbol, d?.bySymbol ?? {});
-        } catch {}
+        } catch {
+          failed = true;
+        }
       })()
     );
   }
   await Promise.all(jobs);
-  return { byId, bySymbol };
+  return { byId, bySymbol, failed };
 }
 
 /** آیکون هر توکن را (best-effort) پر می‌کند — خطا هرگز فچ موجودی را نمی‌شکند. */
@@ -2377,12 +2394,23 @@ export async function ensureCgIds(tokens: BlockchainTokenBalance[]): Promise<voi
  * همزمان → CoinGecko پشت سرور Rate-limit (429) می‌دهد → bySymbol خالی →
  * نشان حرفی. حالا همهٔ درخواست‌های همان لحظه (یک فریم رندر) در یک پنجرهٔ
  * ۲۵۰ms جمع شده و با «یک» درخواست دسته‌ای (تا ۸۰ سمبول) برمی‌گردند.
- * سمبول‌های بدون جواب ۵ دقیقه کش منفی می‌شوند تا رندرهای بعدی فشار نیاورند.
+ * سمبول‌های بدون جواب ۶۰ ثانیه کش منفی می‌شوند تا رندرهای بعدی فشار نیاورند.
  */
 
 const ICON_BATCH_WINDOW_MS = 250;
-const ICON_NEGATIVE_TTL = 5 * 60_000;
+// v1.8.0 — «ایکون اون ارز را هم نشون بده»: کش منفی ۵ دقیقه‌ای باعث می‌شد یک
+// خطای موقتِ شبکه، آیکون چند دقیقه حذف شود؛ به ۶۰ ثانیه کاهش یافت.
+const ICON_NEGATIVE_TTL = 60_000;
 const iconNegativeCache = new Map<string, number>(); // sym → failedAt
+
+/**
+ * v1.8.0 — سمبول‌هایی که CoinGecko با «جست‌وجوی سمبول» اشتباهی تطبیق می‌دهد؛
+ * برای این‌ها مستقیم با CG-id واقعی پرسیده می‌شود (تست زندهٔ سرور: با
+ * symbols=ton پاسخ «tokamak-network» برمی‌گشت — نه Toncoin!).
+ */
+const SYMBOL_CG_ID_OVERRIDES: Record<string, string> = {
+  TON: 'the-open-network',
+};
 
 type IconQueueItem = { sym: string; resolve: (url?: string) => void };
 let iconBatchQueue: IconQueueItem[] = [];
@@ -2406,10 +2434,40 @@ async function flushIconBatch(): Promise<void> {
   if (batch.length === 0) return;
   const syms = [...new Set(batch.map((b) => b.sym))];
   let bySymbol: Record<string, string> = {};
+  // v1.8.0 — «خطای درخواست» از «سمبول واقعاً ناشناخته» جدا شد: با خطای شبکه
+  // دیگر کشِ منفی نمی‌شوند (قبلاً یک تایم‌اوت، همهٔ آیکون‌های همان دسته را
+  // تا ۵ دقیقه حذف می‌کرد — علت اصلی «آیکون‌ها در صرافی‌ها نشان داده نمی‌شود»).
+  let failed = false;
   try {
     const res = await fetchIconMaps([], syms);
     bySymbol = res.bySymbol ?? {};
-  } catch {}
+    failed = res.failed === true;
+  } catch {
+    failed = true;
+  }
+  // v1.8.0 — سمبول‌های مبهم بدون جواب → با CG-id مستقیم تلاش می‌شوند (TON …)
+  const needIds = new Set<string>();
+  for (const sym of syms) {
+    if (!bySymbol[sym]) {
+      const id = SYMBOL_CG_ID_OVERRIDES[sym];
+      if (id) needIds.add(id);
+    }
+  }
+  if (needIds.size > 0) {
+    try {
+      const res2 = await fetchIconMaps([...needIds], []);
+      if (res2.byId) {
+        const idToSym: Record<string, string> = {};
+        for (const [sym, id] of Object.entries(SYMBOL_CG_ID_OVERRIDES)) {
+          idToSym[id] = sym;
+        }
+        for (const [id, url] of Object.entries(res2.byId)) {
+          const sym = idToSym[id];
+          if (sym && url && !bySymbol[sym]) bySymbol[sym] = url;
+        }
+      }
+    } catch {}
+  }
   for (const [sym, url] of Object.entries(bySymbol)) {
     if (url) {
       tokenIconCache.set(sym, url);
@@ -2418,7 +2476,7 @@ async function flushIconBatch(): Promise<void> {
   }
   for (const item of batch) {
     const url = bySymbol[item.sym];
-    if (!url) iconNegativeCache.set(item.sym, Date.now());
+    if (!url && !failed) iconNegativeCache.set(item.sym, Date.now());
     item.resolve(url);
   }
 }

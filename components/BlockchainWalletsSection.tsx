@@ -96,6 +96,9 @@ export interface BlockchainWalletsSectionProps {
   ) => Promise<boolean>;
   onRemoveWallet: (id: string, name: string) => void;
   onRefreshAll: () => void;
+  /** v1.8.0 — busy دستی دکمهٔ «رفرش همه» (با سقف زمانی در والد) — دکمه دیگر
+   *  بر اساس isFetching پول‌ها قفل نمی‌شود و هیچ‌وقت «مرده» به نظر نمی‌رسد. */
+  refreshingAllBusy?: boolean;
   onRefreshWallet: (id: string) => void;
   /** v1.4.19 — per-wallet manual-refresh spinner state (id → busy). */
   manualRefreshing?: Record<string, boolean>;
@@ -116,6 +119,7 @@ export default function BlockchainWalletsSection({
   onEditWallet,
   onRemoveWallet,
   onRefreshAll,
+  refreshingAllBusy,
   onRefreshWallet,
   manualRefreshing,
   refreshToast,
@@ -163,8 +167,14 @@ export default function BlockchainWalletsSection({
         <View style={styles.portfolioHeader}>
           <LinkIcon size={20} color={colors.dark.accent} />
           <Text style={styles.portfolioTitle}>مجموع کیف پول‌های بلاکچین</Text>
-          <Pressable style={styles.refreshAllBtn} onPress={onRefreshAll} disabled={anyFetching}>
-            {anyFetching ? (
+          {/* v1.8.0 — دکمه فقط هنگام رفرشِ دستیِ فعال قفل می‌شود (نه با
+              isFetching پول‌ها)؛ اسپینر هر دو حالت را نشان می‌دهد. */}
+          <Pressable
+            style={styles.refreshAllBtn}
+            onPress={onRefreshAll}
+            disabled={refreshingAllBusy === true}
+          >
+            {anyFetching || refreshingAllBusy ? (
               <ActivityIndicator size="small" color={colors.dark.accent} />
             ) : (
               <RefreshCw size={16} color={colors.dark.accent} />

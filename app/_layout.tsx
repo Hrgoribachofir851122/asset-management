@@ -59,10 +59,18 @@ function RootNavigator() {
   // زیر نوار وضعیت/ناچ گوشی می‌افتاد. حالا کل ریشه با insets.top زیر نوار
   // وضعیت فشار داده می‌شود — بنر دقیقاً «داخل» قاب برنامه و زیر نوار گوشی
   // ظاهر می‌شود و دیگر بریده/پوشیده نمی‌شود.
+  //
+  // v1.8.0 — «کادر سفید بالا نباشه و قسمت بالای برنامه بره بالاتر تا اون
+  // قسمتو پر کنه»: ریشه پس‌زمینهٔ نداشت → پشت نوار وضعیت و نوار لمسی پایین،
+  // پس‌زمینهٔ سفیدِ خودِ گوشی (windowBackground) پیدا بود — در اسکرین‌شات دو
+  // نوار سفید بالا و پایین دیده می‌شد. حالا ریشه دقیقاً همان رنگِ تم را کل
+  // قاب می‌کشد (edge-to-edge)، پس نوار وضعیت/ناچ هم تیره می‌شوند و برنامه
+  // یک‌تکه و تمام‌صفحه دیده می‌شود. خودِ محتوا با paddingTop همان‌جا زیر
+  // نوار وضعیت می‌ماند (بنر آپدیت هم زیر مودال‌های گوشی).
   const insets = useSafeAreaInsets();
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View style={[styles.container, { paddingTop: insets.top, backgroundColor: palette.background }]}>
       <StatusBar
         style={mode === 'light' ? 'dark' : 'light'}
         backgroundColor={palette.statusBar}

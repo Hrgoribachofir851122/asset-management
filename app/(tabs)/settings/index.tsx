@@ -228,6 +228,8 @@ export default function SettingsScreen() {
       {/* ── Header ─────────────────────────────────────────────── */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>تنظیمات</Text>
+        {/* v1.8.0 — خط تأکید هم‌خانواده با صفحهٔ مدیریت دارایی */}
+        <View style={styles.headerAccent} />
       </View>
 
       {/* ── بررسی IP و فیلترشکن (هر ۳ ثانیه اتوماتیک) ── */}
@@ -395,10 +397,19 @@ const styles = createThemedStyles(() =>
       paddingVertical: 12,
       marginBottom: 8,
     },
+    // v1.8.0 — خط تأکید زیر عنوان (هم‌خانواده با صفحهٔ مدیریت دارایی)
+    headerAccent: {
+      width: 44,
+      height: 3,
+      borderRadius: 2,
+      marginTop: 7,
+      backgroundColor: colors.dark.accent,
+    },
     headerTitle: {
       fontSize: 20,
-      fontWeight: '700' as const,
+      fontWeight: '800' as const,
       color: colors.dark.text,
+      letterSpacing: 0.2,
     },
     ipWrap: {
       marginBottom: 16,
