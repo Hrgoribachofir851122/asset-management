@@ -25,11 +25,6 @@ import {
   IranMarketPrices,
   clearIranMarketMemoryCache,
 } from '@/utils/iranMarketApi';
-import {
-  fetchTalineGoldPrices,
-  clearTalineMemoryCache,
-  TalineGoldPrices,
-} from '@/utils/talineApi';
 import { formatToman } from '@/utils/nobitexApi';
 import {
   isGlobalGoldMarketOpen,
@@ -42,6 +37,7 @@ import {
   TgjuHistorySymbol,
   TgjuClosePoint,
 } from '@/utils/tgjuHistoryApi';
+import { fetchTalineGold, clearTalineGoldMemoryCache } from '@/utils/talineApi';
 
 /**
  * LocalAssetsSection — v1.4.16
@@ -183,14 +179,17 @@ export default function LocalAssetsSection({
   });
   const p = pricesQuery.data;
 
-  // v1.3.6 — قیمت خرید/فروش طلای آب‌شده از طلاین (درخواست کاربر) — هماهنگ
-  // با دکمهٔ رفرش همین بخش: هر دو با هم invalidate می‌شوند.
+  // v1.3.7 — «قیمت خرید و فروش هر گرم طلای آب‌شده از طلاین» — نرخ لحظه‌ایِ
+  // taline.ir بدون نیاز به سرور: ۵ لایهٔ موازی (کانال رسمی طلاین مستقیم +
+  // سه آینهٔ عمومی + سرور/سایت) و کش stale — مثل بقیهٔ قیمت‌های لحظه‌ای.
+  // با همان ریتم ۵ دقیقه‌ای قیمت‌ها خودکار تازه می‌شود.
   const talineQuery = useQuery({
     queryKey: ['taline-gold'],
-    queryFn: fetchTalineGoldPrices,
-    refetchInterval: 60 * 1000,
+    queryFn: fetchTalineGold,
+    refetchInterval: 5 * 60 * 1000,
     staleTime: 60 * 1000,
   });
+  const taline = talineQuery.data;
 
   const update = useCallback((patch: Partial<LocalAssets>) => {
     setAssets((prev) => {
@@ -201,10 +200,10 @@ export default function LocalAssetsSection({
   }, []);
 
   const refresh = useCallback(() => {
-    // v1.2.0 — «رفرش یک‌بار کار می‌کند دفعهٔ دوم نه»: اول کش ۶۰ ثانیه‌ای حافظه
+    // v1.2.0 — «رفرش یک‌بار کار می‌کند دفعهٔ دوم نه»: اول کشِ ۶۰ ثانیه‌ای حافظه
     // خالی می‌شود تا invalidate واقعاً یک درخواست تازه بزند، نه برگرداندن همان کش.
     clearIranMarketMemoryCache();
-    clearTalineMemoryCache(); // v1.3.6 — کادرهای خرید/فروش طلاین هم رفرش شوند
+    clearTalineGoldMemoryCache();
     queryClient.invalidateQueries({ queryKey: ['iran-market-prices'] });
     queryClient.invalidateQueries({ queryKey: ['taline-gold'] });
   }, [queryClient]);
@@ -250,6 +249,8 @@ export default function LocalAssetsSection({
     (hasBlockchainWallet && blockchainToman > 0);
 
   const minutesOld = p ? Math.max(1, Math.round((Date.now() - p.updatedAt) / 60000)) : 0;
+  // v1.3.6 — عمر نرخ طلاین (برای پانویس کارت خرید/فروش)
+  const talineMinutes = taline ? Math.max(1, Math.round((Date.now() - taline.updatedAt) / 60000)) : 0;
 
   return (
     <View style={styles.card}>
@@ -325,16 +326,45 @@ export default function LocalAssetsSection({
         {!p && !pricesQuery.isFetching && (
           <Text style={styles.priceNote}>قیمت‌ها در دسترس نیست — بعداً تازه‌سازی کنید</Text>
         )}
-      </View>
 
-      {/* ── v1.3.6 — کادرهای «قیمت خرید / قیمت فروش» طلای آب‌شده از طلاین ──
-          درخواست کاربر: «دوتا کادر یکی قیمت خرید و یکی قیمت فروش با کادر
-          رنگی سبز و قرمز، و بالاش بنویسی این قیمت مال این سایته». سبز = خرید،
-          قرمز = فروش؛ بالای کادرها منبع (taline.ir) نوشته شده است. ── */}
-      <TalineBuySellCard
-        data={talineQuery.data}
-        isFetching={talineQuery.isFetching}
-      />
+        {/* v1.3.6 — خرید/فروش هر گرم طلای آب‌شده از طلاین (طرح تأییدشده:
+            کادر سبز خرید، کادر قرمز فروش، زیر قیمت‌های لحظه‌ای) */}
+        <View style={styles.talineCard}>
+          <View style={styles.talineHeader}>
+            <View style={styles.talineBadge}>
+              <Text style={styles.talineBadgeText}>ط</Text>
+            </View>
+            <Text style={styles.talineTitle}>
+              قیمت خرید و فروش هر گرم طلای آب‌شده از سایت taline.ir
+            </Text>
+          </View>
+          <View style={styles.talineRow}>
+            <View style={[styles.talineBox, styles.talineBoxBuy]}>
+              <Text style={styles.talineBoxLabel}>قیمت خرید هر گرم</Text>
+              <Text style={[styles.talineBoxValue, { color: colors.dark.green }]}>
+                {taline?.buy ? formatFullToman(taline.buy) : '…'}
+              </Text>
+              <Text style={styles.talineBoxUnit}>تومان</Text>
+            </View>
+            <View style={[styles.talineBox, styles.talineBoxSell]}>
+              <Text style={styles.talineBoxLabel}>قیمت فروش هر گرم</Text>
+              <Text style={[styles.talineBoxValue, { color: colors.dark.red }]}>
+                {taline?.sell ? formatFullToman(taline.sell) : '…'}
+              </Text>
+              <Text style={styles.talineBoxUnit}>تومان</Text>
+            </View>
+          </View>
+          <Text style={styles.talineNote}>
+            {taline
+              ? `تازه‌سازی خودکار همراه با قیمت‌ها • ${
+                  talineMinutes <= 3 ? 'لحظه‌ای' : `${talineMinutes} دقیقه پیش`
+                }`
+              : talineQuery.isFetching
+                ? 'در حال دریافت قیمت طلایین…'
+                : 'قیمت طلایین موقتاً در دسترس نیست — بعداً تازه‌سازی کنید'}
+          </Text>
+        </View>
+      </View>
 
       {/* ── v1.4.16: مجموع کل — بالا، درست زیر قیمت‌های لحظه‌ای (همیشه نمایان) ── */}
       <View style={styles.totalBox}>
@@ -867,63 +897,6 @@ function LocalAssetsPnl({
 
 // ── sub-components ──
 
-/**
- * v1.3.6 — TalineBuySellCard — کادرهای خرید/فروش طلای آب‌شده از طلاین.
- * کادر سبز = قیمت خرید، کادر قرمز = قیمت فروش (تأییدشده توسط کاربر روی ماکت).
- * بالای کادرها خط منبع: «قیمت خرید و فروش هر گرم طلای آب‌شده از سایت taline.ir».
- * قیمت‌ها از پروکسی سرور خودمان می‌آیند (utils/talineApi.ts) و با رفرش
- * همین بخش هم تازه می‌شوند؛ وقتی طلاین/سرور در دسترس نباشد آخرین قیمت
- * معتبر (تا ۲۴ ساعت) با برچسب «آخرین قیمت مشخص» دیده می‌شود.
- */
-function TalineBuySellCard({
-  data,
-  isFetching,
-}: {
-  data?: TalineGoldPrices | null;
-  isFetching: boolean;
-}) {
-  const has = !!(data && data.buy > 0 && data.sell > 0);
-  const minsOld = data ? Math.max(0, Math.round((Date.now() - data.updatedAt) / 60_000)) : 0;
-  return (
-    <View style={styles.talineCard}>
-      <View style={styles.talineHead}>
-        <View style={styles.talineBadge}>
-          <Text style={styles.talineBadgeText}>ط</Text>
-        </View>
-        <Text style={styles.talineHeadText}>
-          قیمت خرید و فروش هر گرم طلای آب‌شده از سایت{' '}
-          <Text style={styles.talineSite}>taline.ir</Text>
-        </Text>
-      </View>
-      <View style={styles.talineRow}>
-        <View style={[styles.talineBox, styles.talineBoxBuy]}>
-          <Text style={styles.talineBoxLabel}>قیمت خرید هر گرم</Text>
-          <Text style={[styles.talineBoxValue, { color: colors.dark.green }]}>
-            {has ? formatFullToman(data!.buy) : '…'}
-          </Text>
-          <Text style={styles.talineBoxUnit}>تومان</Text>
-        </View>
-        <View style={[styles.talineBox, styles.talineBoxSell]}>
-          <Text style={styles.talineBoxLabel}>قیمت فروش هر گرم</Text>
-          <Text style={[styles.talineBoxValue, { color: colors.dark.red }]}>
-            {has ? formatFullToman(data!.sell) : '…'}
-          </Text>
-          <Text style={styles.talineBoxUnit}>تومان</Text>
-        </View>
-      </View>
-      <Text style={styles.talineNote}>
-        {isFetching && !has
-          ? 'در حال دریافت قیمت از طلاین…'
-          : has
-            ? data!.stale
-              ? `آخرین قیمت مشخص • ${minsOld} دقیقه پیش`
-              : 'لحظه‌ای • منبع: taline.ir'
-            : 'قیمت طلاین موقتاً در دسترس نیست — بعداً تازه‌سازی کنید'}
-      </Text>
-    </View>
-  );
-}
-
 function PriceChip({
   label,
   value,
@@ -1188,84 +1161,83 @@ const styles = createThemedStyles(() =>
       marginTop: 6,
       textAlign: 'left',
     },
-    // ── v1.3.6 — کادرهای خرید/فروش طلای آب‌شده (طلاین) ──
+    // v1.3.6 — کارت خرید/فروش هر گرم طلای آب‌شده از طلاین (تأییدشده در پیش‌نمایش)
     talineCard: {
-      backgroundColor: colors.dark.card,
-      borderRadius: 10,
-      padding: 10,
       marginTop: 10,
+      backgroundColor: colors.dark.surface,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.dark.border,
+      padding: 10,
     },
-    talineHead: {
-      flexDirection: 'row-reverse',
+    talineHeader: {
+      flexDirection: 'row',
       alignItems: 'center',
-      gap: 6,
+      gap: 8,
       marginBottom: 8,
     },
     talineBadge: {
-      width: 18,
-      height: 18,
-      borderRadius: 9,
-      backgroundColor: '#F0CC49',
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      backgroundColor: colors.dark.accent + '26',
+      borderWidth: 1,
+      borderColor: colors.dark.accent + '66',
       alignItems: 'center',
       justifyContent: 'center',
     },
     talineBadgeText: {
-      fontSize: 10.5,
+      fontSize: 12,
       fontWeight: '800' as const,
-      color: '#222222',
+      color: colors.dark.accent,
     },
-    talineHeadText: {
+    talineTitle: {
       flex: 1,
-      fontSize: 11,
+      fontSize: 11.5,
       fontWeight: '700' as const,
-      color: colors.dark.text,
+      color: colors.dark.textSecondary,
       textAlign: 'right',
     },
-    talineSite: {
-      color: colors.dark.accent,
-      fontWeight: '800' as const,
-    },
     talineRow: {
-      flexDirection: 'row-reverse',
-      gap: 6,
+      flexDirection: 'row',
+      gap: 8,
     },
     talineBox: {
       flex: 1,
-      borderRadius: 8,
-      paddingVertical: 9,
-      paddingHorizontal: 6,
+      borderRadius: 10,
+      borderWidth: 1,
       alignItems: 'center',
+      paddingVertical: 10,
+      paddingHorizontal: 6,
     },
     talineBoxBuy: {
-      borderWidth: 1,
-      borderColor: colors.dark.green + '66',
-      backgroundColor: colors.dark.greenDim,
+      borderColor: colors.dark.green + '73', // rgba(14,203,129,.45)
+      backgroundColor: colors.dark.green + '1A', // rgba(14,203,129,.10)
     },
     talineBoxSell: {
-      borderWidth: 1,
-      borderColor: colors.dark.red + '66',
-      backgroundColor: colors.dark.redDim,
+      borderColor: colors.dark.red + '73', // rgba(246,70,93,.45)
+      backgroundColor: colors.dark.red + '1A', // rgba(246,70,93,.10)
     },
     talineBoxLabel: {
-      fontSize: 10,
+      fontSize: 10.5,
       color: colors.dark.textSecondary,
       textAlign: 'center',
     },
     talineBoxValue: {
-      fontSize: 16.5,
+      fontSize: 15.5,
       fontWeight: '800' as const,
       marginTop: 3,
     },
     talineBoxUnit: {
-      fontSize: 9,
+      fontSize: 9.5,
       color: colors.dark.textSecondary,
       marginTop: 2,
     },
     talineNote: {
       fontSize: 9,
-      color: colors.dark.textSecondary,
-      marginTop: 7,
-      textAlign: 'left',
+      color: colors.dark.textMuted,
+      marginTop: 8,
+      textAlign: 'center',
     },
     divider: {
       height: 1,
