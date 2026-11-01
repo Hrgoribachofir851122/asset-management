@@ -18,6 +18,8 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import colors from '@/constants/colors';
 import { createThemedStyles } from '@/utils/themeStyles';
+// v1.4.0 — کادر چشمک‌زن رشد/ریزش قیمت (طلای ۱۸، سکه‌ها، دلار)
+import BlinkFrame from '@/components/BlinkFrame';
 import {
   fetchIranMarketPrices,
   parseTomanInput,
@@ -286,15 +288,15 @@ export default function LocalAssetsSection({
             tone={goldMarketOpen ? 'open' : 'closed'}
           />
           {/* با بازارِ باز این کادرها با رنگ متمایز (سبز) بهتر دیده می‌شوند */}
-          <PriceChip label="طلای ۱۸ عیار (گرم)" value={p?.gold18} tone="open" />
-          <PriceChip label="طلای ۲۴ عیار (گرم)" value={p?.gold24} />
+          <PriceChip label="طلای ۱۸ عیار (گرم)" value={p?.gold18} tone="open" blinkKey="metal:geram18" />
+          <PriceChip label="طلای ۲۴ عیار (گرم)" value={p?.gold24} blinkKey="metal:geram24" />
           <PriceChip label="نقره ۹۹۹ (گرم)" value={p?.silver999} />
           <PriceChip label="نقره ۹۲۵ (گرم)" value={p?.silver925} />
-          <PriceChip label="سکه امامی" value={p?.coinEmami} />
-          <PriceChip label="سکه بهار آزادی" value={p?.coinBahar} />
+          <PriceChip label="سکه امامی" value={p?.coinEmami} blinkKey="metal:sekee" />
+          <PriceChip label="سکه بهار آزادی" value={p?.coinBahar} blinkKey="metal:sekee_bahar" />
           <PriceChip label="نیم سکه" value={p?.coinNim} />
           <PriceChip label="ربع سکه" value={p?.coinRob} />
-          <PriceChip label="دلار آزاد" value={p?.dollar} tone="open" />
+          <PriceChip label="دلار آزاد" value={p?.dollar} tone="open" blinkKey="metal:price_dollar_rl" />
           <PriceChip
             label="تتر"
             value={usdtToToman > 0 ? usdtToToman : undefined}
@@ -902,12 +904,15 @@ function PriceChip({
   value,
   usd,
   tone,
+  blinkKey,
 }: {
   label: string;
   value?: number;
   usd?: boolean;
   /** v1.1.0 — 'open' سبز (بازار باز)، 'closed' قرمز (بازار بسته — فقط انس) */
   tone?: 'open' | 'closed';
+  /** v1.4.0 — کلید چشمک‌زن رشد/ریزش (فقط برای دارایی‌های تحت‌نظر اعلان) */
+  blinkKey?: string | null;
 }) {
   // v1.5.12 — «قیمت انس جهانی طلا» دلاری است؛ بقیه تومانی.
   const text =
@@ -916,7 +921,7 @@ function PriceChip({
         ? `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
         : formatFullToman(value)
       : '…';
-  return (
+  const inner = (
     <View
       style={[
         styles.priceChip,
@@ -936,6 +941,13 @@ function PriceChip({
         {text}
       </Text>
     </View>
+  );
+  // v1.4.0 — رشد/ریزش از آستانهٔ اعلان → کادر چشمک‌زن تا برگشت زیر آستانه
+  if (!blinkKey) return inner;
+  return (
+    <BlinkFrame blinkKey={blinkKey} price={value ?? 0} borderRadius={12}>
+      {inner}
+    </BlinkFrame>
   );
 }
 

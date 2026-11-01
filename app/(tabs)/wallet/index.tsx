@@ -58,8 +58,9 @@ import {
   fetchBitperpPositionHistory,
 } from '@/utils/bitperpApi';
 import { fetchForeignExchangeBalance } from '@/utils/foreignExchangeBalances';
-import { syncPriceAlertConfig } from '@/utils/priceAlertApi';
 import { fetchForeignPeriodPnl } from '@/utils/foreignExchangePnl';
+import { noteWatchedExchangeAssets } from '@/utils/priceAlertApi';
+import BlinkFrame from '@/components/BlinkFrame';
 import { exchangeNow, markClockStale } from '@/utils/exchangeClock';
 import LocalAssetsSection from '@/components/LocalAssetsSection';
 // v1.2.0 — کارت پیام IP تحریمی برای دو تب «کیف پول بلاکچین» و «ارز دیجیتال»
@@ -273,6 +274,8 @@ async function readBalanceCache(walletId: string): Promise<ExchangeBalanceData |
 async function writeBalanceCache(walletId: string, data: ExchangeBalanceData): Promise<void> {
   try {
     await AsyncStorage.setItem(BALANCE_CACHE_PREFIX + walletId, JSON.stringify(data));
+    // v1.4.0 — سیمبل‌های دارایی صرافی برای «اعلان رشد/ریزش قیمت» ثبت می‌شوند
+    void noteWatchedExchangeAssets(data.balances);
   } catch {}
 }
 
@@ -2503,16 +2506,6 @@ export default function WalletScreen() {
     };
   }, [bcWalletsKey]);
 
-  // v1.3.8 — هر بار که موجودی‌ها تازه می‌شوند، لیست ارزهای «تحت نظر» سرویس
-  // اعلان رشد قیمت هم به‌روز می‌شود (کوین جدید → از همان دورهٔ بعدی زیر نظر)
-  useEffect(() => {
-    if (!bcCachesLoaded) return;
-    const timer = setTimeout(() => {
-      syncPriceAlertConfig().catch(() => {});
-    }, 3000);
-    return () => clearTimeout(timer);
-  }, [bcCachesLoaded, bcWalletsKey, walletsQuery.dataUpdatedAt]);
-
   const bcBalanceQueries = useQueries({
     queries: bcCachesLoaded
       ? bcWallets.map((w, idx) => ({
@@ -4123,7 +4116,16 @@ function BalanceRow({
     bal.avgCost !== undefined && bal.avgCost > 0 && bal.pnlPercent !== undefined;
   // v1.5.6 — آیکون/درصد تغییر با سیمبل جهانی (تتر → USDT)، نام نمایشی فارسی می‌ماند
   const resolveSym = bal.iconSymbol ?? bal.asset;
+  // v1.4.0 — چشمک‌زن رشد/ریزش: خط پایهٔ ۲۴ ساعته روی قیمت واحد (ارزش÷مقدار)
+  const unitPrice =
+    bal.total > 0 && bal.valueUsd > 0 ? bal.valueUsd / bal.total : 0;
   return (
+    <BlinkFrame
+      blinkKey={`coin:${resolveSym}`}
+      price={unitPrice}
+      borderRadius={12}
+      testID={`blink-ex-${resolveSym}`}
+    >
     <View style={styles.balanceRow}>
       {/* گروه راست: آیکون واقعی + نام کنار آن (مثل ردیف‌های کیف پول) */}
       <View style={styles.assetLeftGroup}>
@@ -4167,6 +4169,7 @@ function BalanceRow({
         <AssetPeriodChangePct asset={resolveSym} days={pnlPeriodDays} />
       </View>
     </View>
+    </BlinkFrame>
   );
 }
 
@@ -4190,7 +4193,16 @@ function AggregatedRow({
     bal.avgCost !== undefined && bal.avgCost > 0 && bal.pnlPercent !== undefined;
   // v1.5.6 — آیکون/درصد تغییر با سیمبل جهانی (تتر → USDT)
   const resolveSym = bal.iconSymbol ?? bal.asset;
+  // v1.4.0 — چشمک‌زن رشد/ریزش (ردیف تجمیعی «همه»)
+  const unitPrice =
+    bal.total > 0 && bal.valueUsd > 0 ? bal.valueUsd / bal.total : 0;
   return (
+    <BlinkFrame
+      blinkKey={`coin:${resolveSym}`}
+      price={unitPrice}
+      borderRadius={12}
+      testID={`blink-agg-${resolveSym}`}
+    >
     <View style={styles.balanceRow}>
       {/* گروه راست: آیکون واقعی + نام کنار آن (مثل ردیف‌های کیف پول) */}
       <View style={styles.assetLeftGroup}>
@@ -4234,6 +4246,7 @@ function AggregatedRow({
         <AssetPeriodChangePct asset={resolveSym} days={pnlPeriodDays} />
       </View>
     </View>
+    </BlinkFrame>
   );
 }
 

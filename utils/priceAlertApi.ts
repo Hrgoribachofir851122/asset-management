@@ -1,280 +1,203 @@
 /**
- * utils/priceAlertApi.ts — v1.3.8 «اعلان رشد قیمت، حتی وقتی برنامه بسته است»
+ * utils/priceAlertApi.ts — v1.4.0
  *
- * پل JS ↔ سرویس بومی اندروید (PriceAlertModule + PriceAlertWorker):
- *   • از کیف پول‌های بلاکچین و صرافی‌های کاربر، لیست ارزهای «تحت نظر» را
- *     می‌سازد (با برچسب فارسی «از کدام کیف پول/صرافی») و همراه تنظیمات به
- *     لایهٔ بومی می‌فرستد. سرویس بومی در پس‌زمینه (WorkManager، هر ۱۵ دقیقه،
- *     قید اینترنت) قیمت‌ها را چک می‌کند و رشد ≥ آستانه را نوتیف می‌کند.
- *   • طلای ۱۸ عیار و دلار همیشه در لیست‌اند (آستانهٔ خودشان — پیش‌فرض ۱٪).
- *   • روی وب ماژول بومی وجود ندارد — همهٔ توابع بی‌صدا no-op می‌شوند.
+ * پل JS ↔ ماژول نیتیو PriceAlert (اندروید) برای «اعلان رشد/ریزش قیمت»:
+ *   • configure()      — ذخیرهٔ تنظیمات + لیست دارایی‌های تحت‌نظر در نیتیو
+ *   • syncPriceAlertConfig() — جمع‌کردن دارایی‌ها از کیف بلاکچین + آخرین کش
+ *     موجودی صرافی‌ها + طلا/دلار همیشگی، و فرستادن به نیتیو (روی وب no-op)
+ *   • noteWatchedExchangeAssets() — صفحهٔ کیف پول بعد از هر دریافت موفق
+ *     موجودی صرافی این را صدا می‌زند تا سیمبل‌ها برای اعلان ذخیره شوند
+ *   • testAlert() / checkNow() / getStatus() / باتری
+ *
+ * سیمبل بایننس: سیمبل‌های نگاشت‌شده به USDT (BTCUSDT…) — همان منبعی که
+ * کارگر تغییر ٪ ۲۴ ساعته را از آن می‌گیرد.
  */
 
 import { NativeModules, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { loadBlockchainWallets, readBlockchainBalanceCache, type BlockchainWallet } from '@/utils/blockchainWallets';
+import { loadBlockchainWallets } from './blockchainWallets';
 
-const SETTINGS_KEY = '@price_alert_settings_v1';
-/** همان کلیدهایی که صفحهٔ کیف پول استفاده می‌کند (app/(tabs)/wallet/index.tsx) */
-const EXCHANGE_WALLETS_KEY = '@exchange_wallets';
-const EXCHANGE_BALANCE_PREFIX = '@wallet_balance_cache_';
+const CFG_KEY = '@price_alert_cfg_v1';
+const EXCHANGE_COINS_KEY = '@price_alert_exchange_coins';
 
-export interface PriceAlertSettings {
+export interface PriceAlertConfig {
   enabled: boolean;
-  /** آستانهٔ رشد روزانهٔ کوین‌ها (درصد) — پیش‌فرض ۲۰ */
+  /** آستانهٔ رشد/ریزش کوین‌ها (٪ در ۲۴ ساعت) */
   coinPct: number;
-  /** آستانهٔ رشد روزانهٔ طلا/دلار (درصد) — پیش‌فرض ۱ */
+  /** آستانهٔ رشد/ریزش طلا و دلار (٪ در ۲۴ ساعت) */
   metalPct: number;
 }
 
-export const DEFAULT_ALERT_SETTINGS: PriceAlertSettings = {
+export const DEFAULT_ALERT_CONFIG: PriceAlertConfig = {
   enabled: false,
   coinPct: 20,
-  metalPct: 1,
+  metalPct: 0.5,
 };
 
 export interface PriceAlertStatus {
-  enabled: boolean;
-  hasPermission: boolean;
-  assetCount: number;
-  lastRunAt: number;
-  lastError: string | null;
-  lastAssetCount: number;
-  available: boolean;
+  lastRun?: number;
+  lastError?: string | null;
+  okCount?: number;
+  runCount?: number;
 }
 
-interface AlertAsset {
-  id: string;
-  kind: 'crypto' | 'stable' | 'metal' | 'fx';
-  symbol: string;
-  pair?: string;
-  label: string;
-}
-
-interface ExchangeWalletRow {
-  id: string;
-  exchangeName?: string;
-}
-
-interface ExchangeBalanceRow {
-  asset: string;
-  total?: number;
-  free?: number;
-  locked?: number;
-}
-
-const STABLES = new Set(['USDT', 'USDC', 'DAI', 'TUSD', 'FDUSD', 'BUSD', 'USDP']);
-const SKIP_SYMBOLS = new Set(['IRT', 'TMN', 'IRR', '']);
-
-/** نمایش فارسی رایج‌ترین ارزها — بقیه با کد خودشان نشان داده می‌شوند. */
-const FA_NAMES: Record<string, string> = {
-  BTC: 'بیت‌کوین', ETH: 'اتریوم', USDT: 'تتر', TRX: 'ترون', BNB: 'بی‌ان‌بی',
-  SOL: 'سولانا', XRP: 'ریپل', DOGE: 'دوج‌کوین', ADA: 'کاردانو', LTC: 'لایت‌کوین',
-  SHIB: 'شیبا اینو', DOT: 'پولکادات', LINK: 'چین‌لینک', AVAX: 'آوالانچ',
-  MATIC: 'پالیگان', TON: 'تون‌کوین', NOT: 'نات‌کوین', PEPE: 'پپه', UNI: 'یونی‌سواپ',
-  XLM: 'استلار', ATOM: 'کازموس', NEAR: 'نیر', APT: 'اپتوس', ARB: 'آربیتروم',
-  OP: 'اپتیمیزم', FIL: 'فایل‌کوین', XMR: 'مونرو', ETC: 'اتریوم کلاسیک',
-  BCH: 'بیت‌کوین کش', DASH: 'دش', ZEC: 'زی‌کش', ALGO: 'آلگورند', FTM: 'فانتوم',
-  XAUT: 'تتر طلا', PAXG: 'پکس گلد', WBTC: 'بیت‌کوین پوشیده', SUI: 'سویی',
-  AAVE: 'اِیو', SAND: 'سندباکس', MANA: 'مانا', AXS: 'اکسی اینفینیتی', GRT: 'گراف',
-};
-
-function mod(): PriceAlertNativeModule | null {
-  if (Platform.OS !== 'android') return null;
-  const m = (NativeModules as Record<string, unknown>).PriceAlert;
-  return (m as PriceAlertNativeModule) ?? null;
-}
-
-interface PriceAlertNativeModule {
-  configure(configJson: string): Promise<boolean>;
-  requestPermission(): Promise<boolean>;
-  hasPermission(): Promise<boolean>;
-  testNotification(): Promise<boolean>;
-  runNow(): Promise<boolean>;
+interface NativePriceAlert {
+  configure(enabled: boolean, coinPct: number, metalPct: number, watchedJson: string): Promise<boolean>;
+  testAlert(): Promise<boolean>;
+  checkNow(): Promise<boolean>;
+  getStatus(): Promise<string>;
+  isIgnoringBatteryOptimizations(): Promise<boolean>;
+  requestIgnoreBatteryOptimizations(): Promise<boolean>;
   openBatterySettings(): Promise<boolean>;
-  getStatus(): Promise<{
-    enabled: boolean; hasPermission: boolean; assetCount: number;
-    lastRunAt: number; lastError: string | null; lastAssetCount: number;
-  }>;
 }
 
-export async function loadAlertSettings(): Promise<PriceAlertSettings> {
+function native(): NativePriceAlert | null {
+  if (Platform.OS !== 'android') return null;
+  const m = (NativeModules as Record<string, unknown>).PriceAlert as NativePriceAlert | undefined;
+  return m ?? null;
+}
+
+/** تنظیمات فعلی (کپی JS برای UI و هوک چشمک‌زن) */
+export async function loadAlertConfig(): Promise<PriceAlertConfig> {
   try {
-    const raw = await AsyncStorage.getItem(SETTINGS_KEY);
-    if (!raw) return { ...DEFAULT_ALERT_SETTINGS };
-    const parsed = JSON.parse(raw) as Partial<PriceAlertSettings>;
-    return {
-      enabled: !!parsed.enabled,
-      coinPct: Number(parsed.coinPct) > 0 ? Number(parsed.coinPct) : DEFAULT_ALERT_SETTINGS.coinPct,
-      metalPct: Number(parsed.metalPct) > 0 ? Number(parsed.metalPct) : DEFAULT_ALERT_SETTINGS.metalPct,
-    };
-  } catch {
-    return { ...DEFAULT_ALERT_SETTINGS };
+    const raw = await AsyncStorage.getItem(CFG_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<PriceAlertConfig>;
+      return { ...DEFAULT_ALERT_CONFIG, ...parsed };
+    }
+  } catch {}
+  return { ...DEFAULT_ALERT_CONFIG };
+}
+
+export async function saveAlertConfigLocal(cfg: PriceAlertConfig): Promise<void> {
+  try {
+    await AsyncStorage.setItem(CFG_KEY, JSON.stringify(cfg));
+  } catch {}
+}
+
+/** کلیدهای فید TGJU — همان‌هایی که iranMarketApi می‌خواند */
+const METAL_WATCHED = [
+  { tgju: 'geram18', label: 'طلای ۱۸ عیار (گرم)', kind: 'metal' },
+  { tgju: 'sekee', label: 'سکه امامی', kind: 'metal' },
+  { tgju: 'price_dollar_rl', label: 'دلار آزاد', kind: 'fiat' },
+] as const;
+
+/** کاراکترهای غیرمجاز در سیمبل بایننس */
+function toBinanceSymbol(sym: string): string | null {
+  const s = sym.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (!s || s.length < 2 || s.length > 12) return null;
+  // سیمبل‌هایی که خودشان کوته‌نوشت استیبل‌اند یا غیرقابل‌نگاشت‌اند رد می‌شوند
+  if (['USDT', 'USDC', 'BUSD', 'TUSD', 'FDUSD', 'DAI', 'TRY', 'BRL', 'EUR'].includes(s)) {
+    return `${s}USDT`; // تتر/استیبل‌ها مقابل خودشان معنا دارند (قیمت دلاری‌شان ~۱)
   }
+  return `${s}USDT`;
 }
 
-export async function saveAlertSettings(patch: Partial<PriceAlertSettings>): Promise<PriceAlertSettings> {
-  const merged = { ...(await loadAlertSettings()), ...patch };
-  await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(merged));
-  await pushAlertConfig(merged);
-  return merged;
-}
+const labelForSymbol = (sym: string): string => sym;
 
-/** نمایش عمومی: تنظیمات ذخیره‌شده + دارایی‌های فعلی را به سرویس بومی می‌دهد. */
-export async function syncPriceAlertConfig(): Promise<{ ok: boolean; assetCount: number }> {
-  const m = mod();
-  if (!m) return { ok: false, assetCount: 0 };
+/**
+ * سیمبل‌های صرافی‌ها از آخرین کش موجودی — صفحهٔ کیف پول بعد از هر دریافت
+ * موفق این را صدا می‌زند (writeBalanceCache). لیست کوتاه (۶۰ سیمبل) تا
+ * درخواست بایننس سبک بماند.
+ */
+export async function noteWatchedExchangeAssets(balances: Array<{ asset?: string; symbol?: string }>): Promise<void> {
   try {
-    const settings = await loadAlertSettings();
-    return await pushAlertConfig(settings);
-  } catch {
-    return { ok: false, assetCount: 0 };
-  }
+    const syms = new Set<string>();
+    for (const b of balances ?? []) {
+      const s = String(b?.asset ?? b?.symbol ?? '').toUpperCase();
+      if (s && s !== 'UNKNOWN') syms.add(s);
+    }
+    const prev = new Set<string>(JSON.parse((await AsyncStorage.getItem(EXCHANGE_COINS_KEY)) ?? '[]') as string[]);
+    for (const s of syms) prev.add(s);
+    const list = Array.from(prev).slice(0, 60);
+    await AsyncStorage.setItem(EXCHANGE_COINS_KEY, JSON.stringify(list));
+  } catch {}
 }
 
-/** ساختن لیست دارایی‌ها از کش‌های موجودی و ارسال به بومی */
-async function pushAlertConfig(settings: PriceAlertSettings): Promise<{ ok: boolean; assetCount: number }> {
-  const m = mod();
-  if (!m) return { ok: false, assetCount: 0 };
-
-  const sources = new Map<string, { kind: 'crypto' | 'stable'; pair?: string; labels: Set<string> }>();
-  const addHolding = (symbolRaw: string, qty: number, label: string) => {
-    const symbol = symbolRaw.trim().toUpperCase();
-    if (SKIP_SYMBOLS.has(symbol)) return;
-    if (!(qty > 0)) return;
-    const kind: 'crypto' | 'stable' = STABLES.has(symbol) ? 'stable' : 'crypto';
-    // جفت اسپات بایننس؛ استیبل‌ها (USDT/USDT وجود ندارد) و نمادهای غیرعادی
-    // (لوریج‌شده/خیلی طولانی) جفت نمی‌گیرند → کارگر برایشان از نوبیتکس می‌پرسد
-    const pair =
-      kind === 'stable' || !/^[A-Z0-9]{2,10}$/.test(symbol) || LEVERAGED.some((s) => symbol.endsWith(s))
-        ? undefined
-        : `${symbol}USDT`;
-    const entry = sources.get(symbol) ?? { kind, pair, labels: new Set<string>() };
-    if (!entry.pair && pair) entry.pair = pair;
-    entry.labels.add(label);
-    sources.set(symbol, entry);
-  };
-
+/** سیمبل‌های کیف‌های بلاکچین (از خود کیف‌ها) + صرافی‌ها (از کش) */
+async function collectWatchedCoins(): Promise<Array<{ key: string; label: string; kind: string; symbol: string; tgju: string }>> {
+  const out = new Map<string, { key: string; label: string; kind: string; symbol: string; tgju: string }>();
   try {
-    // ۱) صرافی‌های ارزی (ارز دیجیتال تب) — از کش موجودی هر صرافی
-    const walletsRaw = await AsyncStorage.getItem(EXCHANGE_WALLETS_KEY);
-    const wallets = walletsRaw ? (JSON.parse(walletsRaw) as ExchangeWalletRow[]) : [];
+    const wallets = await loadBlockchainWallets();
     for (const w of wallets) {
-      if (!w?.id) continue;
-      try {
-        const raw = await AsyncStorage.getItem(EXCHANGE_BALANCE_PREFIX + w.id);
-        if (!raw) continue;
-        const rows = JSON.parse(raw) as ExchangeBalanceRow[];
-        const exName = w.exchangeName || 'صرافی';
-        for (const row of rows ?? []) {
-          const total = Number(row.total ?? 0) || (Number(row.free ?? 0) || 0) + (Number(row.locked ?? 0) || 0);
-          if (!(total > 0) || !row.asset) continue;
-          addHolding(row.asset, total, `${FA_NAMES[row.asset.toUpperCase()] ?? row.asset.toUpperCase()} — صرافی ${exName}`);
-        }
-      } catch { /* کش این صرافی خراب است — بقیه ادامه می‌دهند */ }
+      const sym = String((w as { symbol?: string }).symbol ?? '').trim();
+      const b = toBinanceSymbol(sym);
+      if (b) out.set(b, { key: `coin:${b.replace('USDT', '')}`, label: labelForSymbol(b.replace('USDT', '')), kind: 'coin', symbol: b, tgju: '' });
     }
-
-    // ۲) کیف پول‌های بلاکچین — از کش موجودی هر کیف
-    const bcWallets: BlockchainWallet[] = await loadBlockchainWallets();
-    for (const wallet of bcWallets) {
-      try {
-        const data = await readBlockchainBalanceCache(wallet.id);
-        const wName = wallet.name || 'کیف پول';
-        for (const t of data?.tokens ?? []) {
-          if (!t.symbol) continue;
-          addHolding(t.symbol, t.qty, `${FA_NAMES[t.symbol.toUpperCase()] ?? t.symbol} — کیف پول «${wName}»`);
-        }
-      } catch { /* کش این کیف خراب است — بقیه ادامه می‌دهند */ }
+  } catch {}
+  try {
+    const ex = JSON.parse((await AsyncStorage.getItem(EXCHANGE_COINS_KEY)) ?? '[]') as string[];
+    for (const s of ex) {
+      const b = toBinanceSymbol(s);
+      if (b && !out.has(b)) out.set(b, { key: `coin:${b.replace('USDT', '')}`, label: labelForSymbol(b.replace('USDT', '')), kind: 'coin', symbol: b, tgju: '' });
     }
-  } catch { /* کش‌ها در دسترس نیستند — فقط طلا/دلار زیر نظر می‌مانند */ }
-
-  const assets: AlertAsset[] = [];
-  for (const [symbol, s] of sources) {
-    const label = [...s.labels].slice(0, 2).join(' + ');
-    assets.push({
-      id: `${s.kind}:${symbol}`,
-      kind: s.kind,
-      symbol,
-      pair: s.pair,
-      label: label.length > 90 ? label.slice(0, 87) + '…' : label,
-    });
-  }
-  // طلای ۱۸ عیار و دلار همیشه زیر نظر — فیلد dp خود TGJU
-  assets.push({ id: 'metal:geram18', kind: 'metal', symbol: 'geram18', label: 'طلای ۱۸ عیار (طلاین)' });
-  assets.push({ id: 'fx:dollar', kind: 'fx', symbol: 'price_dollar_rl', label: 'دلار آمریکا' });
-
-  const config = {
-    enabled: settings.enabled,
-    coinPct: settings.coinPct,
-    metalPct: settings.metalPct,
-    assets,
-  };
-  await m.configure(JSON.stringify(config));
-  return { ok: true, assetCount: assets.length };
+  } catch {}
+  return Array.from(out.values());
 }
 
-const LEVERAGED = ['UP', 'DOWN', 'BULL', 'BEAR'];
-
-/** اجازهٔ نوتیفیکیشن (اندروید ۱۳+) — برای لحظهٔ روشن‌کردن کلید در تنظیمات */
-export async function requestAlertPermission(): Promise<boolean> {
-  const m = mod();
-  if (!m) return false;
+/**
+ * همگام‌سازی کامل با نیتیو — در لانچ برنامه (app/_layout) و بعد از هر
+ * تغییر تنظیمات. اگر سرویس روشن باشد لیست تازه می‌رود؛ روی وب no-op.
+ */
+export async function syncPriceAlertConfig(): Promise<void> {
   try {
-    return await m.requestPermission();
+    if (Platform.OS !== 'android') return;
+    const cfg = await loadAlertConfig();
+    const coins = await collectWatchedCoins();
+    const watched = [
+      ...coins,
+      ...METAL_WATCHED.map((m) => ({ key: `metal:${m.tgju}`, label: m.label, kind: m.kind, symbol: '', tgju: m.tgju })),
+    ];
+    const n = native();
+    await n?.configure(cfg.enabled, cfg.coinPct, cfg.metalPct, JSON.stringify(watched));
+  } catch {}
+}
+
+export async function testAlert(): Promise<boolean> {
+  try {
+    return (await native()?.testAlert()) ?? false;
   } catch {
     return false;
   }
 }
 
-/** اجازهٔ نوتیفیکیشن (اندروید ۱۳+) + یک اعلان آزمایشی */
-export async function testAlertNotification(): Promise<boolean> {
-  const m = mod();
-  if (!m) return false;
+export async function checkNow(): Promise<boolean> {
   try {
-    const granted = await m.requestPermission();
-    if (!granted) return false;
-    return await m.testNotification();
+    return (await native()?.checkNow()) ?? false;
   } catch {
     return false;
   }
 }
 
-export async function getPriceAlertStatus(): Promise<PriceAlertStatus> {
-  const m = mod();
-  if (!m) {
-    return {
-      enabled: false, hasPermission: false, assetCount: 0,
-      lastRunAt: 0, lastError: null, lastAssetCount: 0, available: false,
-    };
-  }
+export async function getAlertStatus(): Promise<PriceAlertStatus> {
   try {
-    const s = await m.getStatus();
-    return { ...s, available: true };
+    const raw = await native()?.getStatus();
+    if (!raw) return {};
+    return JSON.parse(raw) as PriceAlertStatus;
   } catch {
-    return {
-      enabled: false, hasPermission: false, assetCount: 0,
-      lastRunAt: 0, lastError: null, lastAssetCount: 0, available: true,
-    };
+    return {};
   }
 }
 
-/** صفحهٔ «بدون بهینه‌سازی باتری» — برای گوشی‌هایی که اپ‌های پس‌زمینه را می‌کشند */
-export async function openBatteryOptimizationSettings(): Promise<boolean> {
-  const m = mod();
-  if (!m) return false;
+export async function isIgnoringBatteryOptimizations(): Promise<boolean> {
   try {
-    return await m.openBatterySettings();
+    return (await native()?.isIgnoringBatteryOptimizations()) ?? true;
+  } catch {
+    return true;
+  }
+}
+
+export async function requestIgnoreBatteryOptimizations(): Promise<boolean> {
+  try {
+    return (await native()?.requestIgnoreBatteryOptimizations()) ?? false;
   } catch {
     return false;
   }
 }
 
-/** اجرای فوری یک دورهٔ چک (دکمهٔ «بررسی همین حالا») */
-export async function runAlertCheckNow(): Promise<boolean> {
-  const m = mod();
-  if (!m) return false;
+export async function openBatterySettings(): Promise<boolean> {
   try {
-    return await m.runNow();
+    return (await native()?.openBatterySettings()) ?? false;
   } catch {
     return false;
   }

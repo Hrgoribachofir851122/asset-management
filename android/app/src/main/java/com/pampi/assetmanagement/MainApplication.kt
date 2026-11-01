@@ -25,7 +25,8 @@ class MainApplication : Application(), ReactApplication {
             PackageList(this).packages.apply {
               // Packages that cannot be autolinked yet can be added manually here, for example:
               // add(MyReactNativePackage())
-              add(PriceAlertPackage()) // v1.3.8 — اعلان رشد قیمت در پس‌زمینه
+              // v1.3.8 — ماژول «اعلان رشد/ریزش قیمت» (تنظیمات + اعلان آزمایشی + بررسی فوری)
+              add(PriceAlertPackage())
             }
 
           override fun getJSMainModuleName(): String = ".expo/.virtual-metro-entry"
@@ -41,6 +42,11 @@ class MainApplication : Application(), ReactApplication {
 
   override fun onCreate() {
     super.onCreate()
+    // v1.4.0 — اگر کاربر اعلان را روشن کرده باشد، کارگر دوره‌ای از همان لانچ
+    // برنامه زمان‌بندی می‌شود (نگهبان اضافه در کنار زمان‌بندی configure/Boot)
+    if (PriceAlertPrefs.isEnabled(this)) {
+      try { PriceAlertWorker.schedulePeriodic(this) } catch (_: Exception) {}
+    }
     DefaultNewArchitectureEntryPoint.releaseLevel = try {
       ReleaseLevel.valueOf(BuildConfig.REACT_NATIVE_RELEASE_LEVEL.uppercase())
     } catch (e: IllegalArgumentException) {

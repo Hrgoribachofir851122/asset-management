@@ -880,18 +880,15 @@ async function talineFetchLive() {
       if (parsed) return parsed;
     }
   } catch {}
-  // لایهٔ ۱-ب — v1.3.9: آینه‌های عمومی کانال. اگر تلگرام IP خود ریلوی را
+  // لایهٔ ۱-ب — v1.3.9: آینه‌های عمومی کانال. اگر تلگرام IP خود سرور را
   // محدود کرده باشد، این دو از آی‌پی خودشان کانال را می‌خوانند.
   const tgEncoded = encodeURIComponent(TALINE_TG_URL);
-  const mirrors = [
+  for (const mirrorUrl of [
     `https://api.allorigins.win/raw?url=${tgEncoded}`,
     `https://api.codetabs.com/v1/proxy?quest=${tgEncoded}`,
-  ];
-  for (const mirrorUrl of mirrors) {
+  ]) {
     try {
-      const r = await fetchWithTimeout(mirrorUrl, {
-        headers: { Accept: '*/*' },
-      }, 12000);
+      const r = await fetchWithTimeout(mirrorUrl, { headers: { Accept: '*/*' } }, 12000);
       if (r.ok) {
         const parsed = parseTalineTelegram(await r.text());
         if (parsed) {

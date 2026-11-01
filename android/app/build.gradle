@@ -97,8 +97,8 @@ android {
         applicationId 'com.pampi.assetmanagement'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 13
-        versionName "1.3.9"
+        versionCode 14
+        versionName "1.4.0"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
 
@@ -167,8 +167,10 @@ android {
 
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
-    implementation("com.facebook.react:react-android")
-    implementation("androidx.work:work-runtime-ktx:2.9.1") // v1.3.8 — WorkManager برای اعلان پس‌زمینه
+            // v1.3.8 — سرویس اعلان رشد/ریزش قیمت در پس‌زمینه (WorkManager)
+        implementation("androidx.work:work-runtime-ktx:2.9.1")
+        implementation("androidx.core:core-ktx:1.13.1")
+implementation("com.facebook.react:react-android")
 
     def isGifEnabled = (findProperty('expo.gif.enabled') ?: "") == "true";
     def isWebpEnabled = (findProperty('expo.webp.enabled') ?: "") == "true";

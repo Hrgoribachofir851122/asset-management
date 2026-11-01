@@ -1,74 +1,78 @@
 package com.pampi.assetmanagement
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.Context
-import android.content.Intent
-import android.content.SharedPreferences
-import android.os.Build
-import androidx.core.app.NotificationCompat
-import androidx.work.Worker
+import androidx.work.CoroutineWorker
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import java.text.DecimalFormat
+import java.text.DecimalFormatSymbols
+import java.util.Locale
+import java.util.concurrent.TimeUnit
 
 /**
- * PriceAlertWorker — v1.3.8 «اعلان رشد قیمت، حتی وقتی برنامه بسته است»
+ * PriceAlertWorker.kt — v1.4.0 (بازنویسی کامل)
  *
- * یک WorkManager PeriodicWork (حداقل مجاز گوگل: ۱۵ دقیقه) با قید
- * NetworkType.CONNECTED — یعنی وقتی اینترنت گوشی قطع است اجرا نمی‌شود و
- * **به‌محض وصل‌شدن اینترنت** (حتی با برنامهٔ کاملاً بسته) اجرا می‌شود.
- *
- * کاری که می‌کند:
- *  ۱) لیست دارایی‌های تحت نظر را از SharedPreferences می‌خواند (JS هر بار
- *     که موجودی‌ها عوض می‌شود، لیست تازه را با PriceAlertModule.configure
- *     می‌فرستد — شامل «از کدام کیف پول/صرافی است»).
- *  ۲) قیمت ۲۴ ساعته:
- *     • کوین‌ها → Binance /api/v3/ticker/24hr?symbols=[...] (با فیلترشکن)؛
- *       اگر بلاک/خطا شد → Nobitex apiv2 market/stats (بدون فیلترشکن کار می‌کند).
- *     • USDT → Nobitex USDT-IRT (رشد دلار یعنی رشد ارزش تومانی تتر).
- *     • طلای ۱۸ عیار و دلار → call{1,2}.tgju.org/ajax.json فیلد dp (درصد
- *       تغییر روزانهٔ خود TGJU — بدون نیاز به تاریخچه).
- *  ۳) رشد ≥ آستانه (کوین: پیش‌فرض ۲۰٪، طلا/دلار: پیش‌فرض ۱٪) → Notification.
- *     هر دارایی حداکثر روزی یک اعلان (dedupe با SharedPreferences)؛ اگر
- *     بیش از ۵ دارایی همزمان رشد کنند، یک اعلان خلاصه می‌آید.
+ * سرویس اعلان «رشد/ریزش قیمت» حتی وقتی برنامه کاملاً بسته است:
+ *   • هر ~۱۵ دقیقه (WorkManager دوره‌ای) + بلافاصله بعد از وصل‌شدن اینترنت
+ *     (کاربر از «بررسی همین حالا» هم می‌تواند دستور بدهد) + بعد از ری‌استارت
+ *     گوشی (BootReceiver).
+ *   • کوین‌ها: تغییر ٪ ۲۴ ساعتهٔ واقعی از Binance (ticker/24hr)؛ اگر
+ *     فیلترشکن خاموش بود، از Nobitex (dayChange) — بدون خط پایه.
+ *   • طلا/سکه/دلار: فید عمومی TGJU (call1/call2/call ajax.json) — چون این فید
+ *     تغییر٪ نمی‌دهد، کارگر خط پایهٔ ۲۴ ساعتهٔ خودش را نگه می‌دارد (base + at؛
+ *     بعد از ۲۴ ساعت ری‌ست). قیمت‌ها از ریال به تومان ÷۱۰ می‌شوند — همان که
+ *     خود اپ نشان می‌دهد. (نسخهٔ قبلی قیمت ریالی خام را تومان می‌نوشت →
+ *     «۲۵۵٬۸۰۰٬۰۰۰ تومان» به‌جای ۲۵٬۵۸۰٬۰۰۰!)
+ *   • هر دو جهت: رشد ≥ +آستانه → اعلان سبزِ منطقِ رشد؛ ریزش ≤ −آستانه → اعلان
+ *     ریزش. فقط گذر از آستانه اعلان می‌دهد (برگشت زیر آستانه دوباره مسلح
+ *     می‌شود) تا هر ۱۵ دقیقه اسپم نیاید.
+ *   • آیکون نوتیفیکیشن: لوگوی برنامه (largeIcon گرد) + سیلوئت سفید
+ *     ic_notification در نوار وضعیت — نه آیکون پیش‌فرض.
  */
-class PriceAlertWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
+
+class PriceAlertWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
 
     companion object {
-        const val WORK_NAME = "price_alert_periodic"
-        const val WORK_NOW = "price_alert_now"
-        const val PREFS = "price_alert_prefs"
-        const val KEY_CONFIG = "config_json"
-        const val KEY_STATE = "state_json"
-        const val CHANNEL_ID = "price_alerts"
-        private const val DAY_MS = 24 * 60 * 60 * 1000L
-        private const val MAX_SINGLE_NOTIFICATIONS = 5
+        const val PERIODIC_NAME = "price_alert_periodic"
+        const val ONESHOT_NAME = "price_alert_now"
+        /** هر ۱۵ دقیقه — حداقل مجاز WorkManager؛ WorkManager خودش در Doze تعویق می‌کند */
+        private val PERIOD_MS = 15L
+        private const val HTTP_TIMEOUT = 12_000
+        /** حداکثر اعلان در هر اجرا — جلوگیری از باران نوتیفیکیشن */
+        private const val MAX_NOTIFY_PER_RUN = 6
 
-        private val TGJU_URLS = listOf(
-            "https://call1.tgju.org/ajax.json",
-            "https://call2.tgju.org/ajax.json",
-            "https://call.tgju.org/ajax.json",
-        )
+        fun schedulePeriodic(context: Context) {
+            val req = PeriodicWorkRequestBuilder<PriceAlertWorker>(PERIOD_MS, TimeUnit.MINUTES)
+                .build()
+            WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+                PERIODIC_NAME, ExistingPeriodicWorkPolicy.KEEP, req,
+            )
+        }
 
-        /** این‌ها جفت اسپات معقول می‌سازند؛ بقیه مستقیم به Nobitex می‌روند. */
-        private val STABLES = setOf(
-            "USDT", "USDC", "DAI", "TUSD", "FDUSD", "BUSD", "USDP", "EUR", "TRY", "BRL",
-        )
-        private val LEVERAGED_SUFFIX = listOf("UP", "DOWN", "BULL", "BEAR")
+        fun checkNow(context: Context) {
+            val req = OneTimeWorkRequestBuilder<PriceAlertWorker>().build()
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                ONESHOT_NAME, ExistingWorkPolicy.REPLACE, req,
+            )
+        }
 
-        val FA_DIGITS = arrayOf("۰", "۱", "۲", "۳", "۴", "۵", "۶", "۷", "۸", "۹")
+        private val FA_DIGITS = arrayOf("۰", "۱", "۲", "۳", "۴", "۵", "۶", "۷", "۸", "۹")
 
         /**
          * v1.3.9 — باگ گوشی‌های با لوکال فارسی: DecimalFormat بدون Locale.US
-         * رقم‌های فارسی تولید می‌کرد و «c - '0'» ایندکس ~۱۷۳۰ از آرایهٔ ۱۰تایی
-         * می‌گرفت (خطای «length=10; index=1730» در آخرین خطا) → ساخت متن اعلان
-         * می‌شکست و نوتیفیکیشن هرگز فرستاده نمی‌شد. حالا: فرمت همیشه انگلیسی
-         * (Locale.US) + نگاشت رقم فقط برای ASCII 0-9؛ هر کاراکتر دیگر سر جایش.
+         * رقم‌های فارسی تولید می‌کرد و نگاشت «c - '0'» ایندکس ~۱۷۳۰ از آرایهٔ
+         * ۱۰تایی می‌گرفت (خطای «length=10; index=1730») → متن اعلان می‌شکست و
+         * اعلان هرگز فرستاده نمی‌شد. حالا: فرمت همیشه انگلیسی (Locale.US) +
+         * نگاشت رقم فقط برای ASCII 0-9.
          */
         fun toFaStr(s: String): String {
             val sb = StringBuilder(s.length)
@@ -80,266 +84,255 @@ class PriceAlertWorker(context: Context, params: WorkerParameters) : Worker(cont
             return sb.toString()
         }
 
-        /** 12.34 → «۱۲٫۳۴» (برای متن نوتیفیکیشن فارسی) */
-        fun toFa(n: Double): String {
-            val s = if (n == n.toLong().toDouble()) String.format(java.util.Locale.US, "%.0f", n) else String.format(java.util.Locale.US, "%.1f", n)
-            return toFaStr(s)
-        }
+        fun toFa(n: Double): String =
+            toFaStr(String.format(Locale.US, "%.1f", n))
 
         fun toFaGrouped(n: Long): String {
-            val symbols = java.text.DecimalFormatSymbols(java.util.Locale.US)
-            val grouped = java.text.DecimalFormat("#,###", symbols).format(n)
+            val sym = DecimalFormatSymbols(Locale.US)
+            val grouped = DecimalFormat("#,###", sym).format(n)
             return toFaStr(grouped.replace(',', '٬'))
         }
 
-        /** نوتیفیکیشن با کانال و آیکون و کلیک→بازکردن برنامه؛ هم کارگر هم ماژول تست. */
-        fun postNotification(ctx: Context, title: String, text: String, alertId: String) {
-            val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            if (Build.VERSION.SDK_INT >= 26) {
-                nm.createNotificationChannel(
-                    NotificationChannel(CHANNEL_ID, "هشدار رشد قیمت", NotificationManager.IMPORTANCE_HIGH).apply {
-                        description = "اعلان رشد قیمت دارایی‌ها (کیف پول، صرافی، طلا و دلار)"
-                    },
-                )
-            }
-            val launch = ctx.packageManager.getLaunchIntentForPackage(ctx.packageName)
-            val pi = PendingIntent.getActivity(
-                ctx, alertId.hashCode(), launch,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-            )
-            val builder = if (Build.VERSION.SDK_INT >= 26) {
-                NotificationCompat.Builder(ctx, CHANNEL_ID)
-            } else {
-                @Suppress("DEPRECATION")
-                NotificationCompat.Builder(ctx)
-            }
-            builder.setSmallIcon(ctx.applicationInfo.icon)
-                .setContentTitle(title)
-                .setContentText(text)
-                .setStyle(NotificationCompat.BigTextStyle().bigText(text))
-                .setAutoCancel(true)
-                .setContentIntent(pi)
-                .setPriority(NotificationCompat.PRIORITY_HIGH)
-                .setCategory(NotificationCompat.CATEGORY_STATUS)
-            try {
-                nm.notify(alertId.hashCode(), builder.build())
-            } catch (e: SecurityException) {
-                // اجازهٔ نوتیفیکیشن داده نشده (اندروید ۱۳+) — بی‌صدا رد می‌شود
-            }
-        }
+        /** نمونهٔ فارسی برای اعلان آزمایشی */
+        fun sampleText(): String =
+            "مثال: بیت‌کوین ۴٫۲٪ رشد در ۲۴ ساعت — اکنون: " + toFaGrouped(2_558_000_000L / 10) + " تومان"
     }
 
-    data class Asset(val id: String, val kind: String, val symbol: String, val pair: String?, val label: String)
-    data class Quote(val pct: Double, val priceText: String?)
+    data class Watched(
+        val key: String,
+        val label: String,
+        val kind: String,   // coin | metal | fiat
+        val symbol: String, // برای coin: نماد بایننس مثل BTCUSDT
+        val tgju: String,   // برای metal/fiat: کلید فید TGJU مثل geram18
+    )
 
-    override fun doWork(): Result {
+    data class Reading(val pct: Double, val priceToman: Double?, val source: String)
+
+    override suspend fun doWork(): Result {
         val ctx = applicationContext
-        val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val configJson = prefs.getString(KEY_CONFIG, null) ?: return Result.success()
-        val config = try { JSONObject(configJson) } catch (e: Exception) { return Result.success() }
-        if (!config.optBoolean("enabled", false)) return Result.success()
-
-        val assets = mutableListOf<Asset>()
+        if (!PriceAlertPrefs.isEnabled(ctx)) return Result.success()
+        val started = System.currentTimeMillis()
+        var lastError: String? = null
+        var notified = 0
         try {
-            val arr = config.optJSONArray("assets") ?: JSONArray()
-            for (i in 0 until arr.length()) {
-                val o = arr.getJSONObject(i)
-                assets.add(
-                    Asset(
-                        id = o.optString("id"),
-                        kind = o.optString("kind", "crypto"),
-                        symbol = o.optString("symbol"),
-                        pair = o.optString("pair", "").ifEmpty { null },
-                        label = o.optString("label"),
-                    ),
-                )
-            }
-        } catch (e: Exception) { return Result.success() }
-        if (assets.isEmpty()) return Result.success()
-
-        val coinPct = config.optDouble("coinPct", 20.0)
-        val metalPct = config.optDouble("metalPct", 1.0)
-
-        val quotes = mutableMapOf<String, Quote>()
-        try {
-            fetchCryptoQuotes(assets.filter { it.kind == "crypto" || it.kind == "stable" }, quotes)
-            fetchTgjuQuotes(assets.filter { it.kind == "metal" || it.kind == "fx" }, quotes)
+            notified = runCheck(ctx)
         } catch (e: Exception) {
-            recordState(prefs, quotes, "fetch error: ${e.message}")
-            return Result.success()
+            lastError = "fetch error: ${e.message ?: e.javaClass.simpleName}"
         }
-
-        val state = try { JSONObject(prefs.getString(KEY_STATE, "{}") ?: "{}") } catch (e: Exception) { JSONObject() }
-        val now = System.currentTimeMillis()
-        val fired = mutableListOf<Pair<Asset, Quote>>()
-        for (a in assets) {
-            val q = quotes[a.id] ?: continue
-            if (q.pct.isNaN() || q.pct <= 0) continue // فقط «رشد» — افت اعلان نمی‌گیرد
-            val threshold = if (a.kind == "metal" || a.kind == "fx") metalPct else coinPct
-            if (q.pct < threshold) continue
-            val last = state.optJSONObject(a.id)
-            if (last != null && now - last.optLong("t", 0) < DAY_MS) continue // روزی یک اعلان
-            fired.add(a to q)
-        }
-
-        if (fired.isNotEmpty()) {
-            if (fired.size <= MAX_SINGLE_NOTIFICATIONS) {
-                for ((a, q) in fired) {
-                    val title = "🚀 ${a.label}"
-                    val body = buildString {
-                        append("رشد ")
-                        append(toFa(q.pct))
-                        append("٪ در ۲۴ ساعت")
-                        q.priceText?.let { append(" — الان: ").append(it) }
-                    }
-                    postNotification(ctx, title, body, a.id)
-                }
-            } else {
-                // پامپ عمومی بازار — یک اعلان خلاصه به‌جای اسپم
-                val lines = fired.take(12).joinToString("\n") { (a, q) -> "${a.label}: +${toFa(q.pct)}٪" }
-                postNotification(
-                    ctx,
-                    "🚀 رشد گروهی بازار (${toFaGrouped(fired.size.toLong())} دارایی)",
-                    lines,
-                    "summary:$now",
-                )
-            }
-            for ((a, _) in fired) {
-                state.put(a.id, JSONObject().put("t", now).put("pct", quotes[a.id]?.pct ?: 0.0))
-            }
-        }
-
-        recordState(prefs, quotes, null)
+        val runs = try {
+            (PriceAlertPrefs.status(ctx).optInt("runCount", 0)) + 1
+        } catch (_: Exception) { 1 }
+        PriceAlertPrefs.saveStatus(ctx, started, lastError?.take(160), notified, runs)
         return Result.success()
     }
 
-    // ── کوین‌ها: Binance (با VPN) → Nobitex (بدون VPN) ────────────────────
-    private fun fetchCryptoQuotes(list: List<Asset>, out: MutableMap<String, Quote>) {
-        if (list.isEmpty()) return
+    private fun runCheck(ctx: Context): Int {
+        val watched = mutableListOf<Watched>()
+        val arr: JSONArray = PriceAlertPrefs.watched(ctx)
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            watched.add(
+                Watched(
+                    key = o.optString("key"),
+                    label = o.optString("label", o.optString("key")),
+                    kind = o.optString("kind", "coin"),
+                    symbol = o.optString("symbol").uppercase(Locale.US),
+                    tgju = o.optString("tgju"),
+                ),
+            )
+        }
+        if (watched.isEmpty()) return 0
 
-        // ۱) بایننس — یک درخواست گروهی برای همهٔ جفت‌های اسپات معتبر
-        val binancePairs = list.filter { it.kind == "crypto" && it.pair != null && !STABLES.contains(it.symbol.uppercase()) }
-            .mapNotNull { it.pair }.distinct()
-        if (binancePairs.isNotEmpty()) {
-            val symbolsJson = binancePairs.joinToString(",", "[", "]") { "\"$it\"" }
-            val body = httpGet("https://api.binance.com/api/v3/ticker/24hr?symbols=" + URLEncoder.encode(symbolsJson, "UTF-8"))
-            var batchOk = false
-            if (body != null) {
-                try {
-                    val byPair = mutableMapOf<String, Pair<Double, String>>()
-                    val arr = JSONArray(body)
-                    for (i in 0 until arr.length()) {
-                        val o = arr.getJSONObject(i)
-                        byPair[o.optString("symbol")] = (o.optString("priceChangePercent").toDoubleOrNull() ?: Double.NaN) to o.optString("lastPrice")
-                    }
-                    for (a in list) {
-                        val p = a.pair ?: continue
-                        val hit = byPair[p] ?: continue
-                        val pct = hit.first
-                        if (!pct.isNaN()) out[a.id] = Quote(pct, formatUsd(hit.second.toDoubleOrNull()))
-                    }
-                    batchOk = true
-                } catch (e: Exception) { /* → تکی/نوبیتکس */ }
+        val coinPct = PriceAlertPrefs.coinPct(ctx)
+        val metalPct = PriceAlertPrefs.metalPct(ctx)
+
+        val coins = watched.filter { it.kind == "coin" && it.symbol.isNotBlank() }
+        val metals = watched.filter { it.kind != "coin" && it.tgju.isNotBlank() }
+
+        val coinReadings = fetchCoinReadings(coins)
+        val metalReadings = fetchMetalReadings(ctx, metals)
+
+        val fired = PriceAlertPrefs.fired(ctx)
+        var notified = 0
+        for (w in watched) {
+            val r = coinReadings[w.key] ?: metalReadings[w.key] ?: continue
+            val thr = if (w.kind == "coin") coinPct else metalPct
+            val direction = when {
+                r.pct >= thr -> "up"
+                r.pct <= -thr -> "down"
+                else -> null
             }
-            if (!batchOk) {
-                // درخواست گروهی رد شد (جفت نامعتبر، محدودیت نرخ، بلاک جغرافیایی)
-                // → تکی‌تکی می‌پرسیم تا یک نماد خراب بقیه را نبُرد
-                for (a in list) {
-                    val p = a.pair ?: continue
-                    if (out[a.id] != null) continue
-                    val one = httpGet("https://api.binance.com/api/v3/ticker/24hr?symbol=" + URLEncoder.encode(p, "UTF-8")) ?: continue
-                    try {
-                        val o = JSONObject(one)
-                        val pct = o.optString("priceChangePercent").toDoubleOrNull() ?: Double.NaN
-                        if (!pct.isNaN()) out[a.id] = Quote(pct, formatUsd(o.optString("lastPrice").toDoubleOrNull()))
-                    } catch (e: Exception) { continue }
+            val prev = fired.optString(w.key, "")
+            when {
+                // گذر تازه از آستانه → اعلان؛ بعدش همان جهت ثبت می‌شود
+                direction != null && direction != prev -> {
+                    if (notified < MAX_NOTIFY_PER_RUN) {
+                        notify(ctx, w, direction, r)
+                        notified++
+                    }
+                    fired.put(w.key, direction)
+                }
+                // برگشت زیر آستانه → مسلح‌شدن دوباره
+                direction == null && prev.isNotEmpty() -> fired.remove(w.key)
+            }
+        }
+        PriceAlertPrefs.saveFired(ctx, fired)
+        return notified
+    }
+
+    // ─── کوین‌ها: Binance 24h change (fallback: Nobitex dayChange) ─────────
+
+    private fun fetchCoinReadings(coins: List<Watched>): Map<String, Reading> {
+        if (coins.isEmpty()) return emptyMap()
+        val out = HashMap<String, Reading>()
+        val bySymbol = coins.associateBy { it.symbol }
+
+        // لایهٔ ۱ — بایننس: تغییر٪ واقعی ۲۴ ساعته
+        try {
+            val symbolsJson = JSONArray().apply { coins.forEach { put(it.symbol) } }
+            val url = "https://api.binance.com/api/v3/ticker/24hr?symbols=" +
+                URLEncoder.encode(symbolsJson.toString(), "UTF-8")
+            val body = httpGet(url) ?: throw RuntimeException("no response")
+            val arr = JSONArray(body)
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val sym = o.optString("symbol").uppercase(Locale.US)
+                val w = bySymbol[sym] ?: continue
+                val pct = o.optDouble("priceChangePercent", Double.NaN)
+                val last = o.optDouble("lastPrice", Double.NaN)
+                if (pct.isFinite()) {
+                    out[w.key] = Reading(pct, if (last.isFinite()) last else null, "binance")
                 }
             }
+        } catch (_: Exception) {
+            // فیلترشکن خاموش/بلاک — لایهٔ ۲ نوبیتکس
         }
 
-        // ۲) هرچه از بایننس نیامد → نوبیتکس (آی‌پی ایران هم جواب می‌دهد)
-        val missingCrypto = list.filter { it.kind == "crypto" && out[it.id] == null }
-        if (missingCrypto.isNotEmpty()) nobitexQuotes(missingCrypto, "usdt", out)
-
-        // ۳) استیبل‌کوین‌ها (USDT و…) → ارزش تومانی‌شان یعنی دلار → نوبیتکس IRT
-        val stables = list.filter { it.kind == "stable" }
-        if (stables.isNotEmpty()) nobitexQuotes(stables, "irt", out)
-    }
-
-    private fun nobitexQuotes(list: List<Asset>, dst: String, out: MutableMap<String, Quote>) {
-        val srcs = list.map { it.symbol.lowercase() }.filter { it.isNotBlank() && it != "irt" && it != "tmn" }.distinct()
-        if (srcs.isEmpty()) return
-        val body = httpGet("https://apiv2.nobitex.ir/market/stats?srcCurrency=${srcs.joinToString(",")}&dstCurrency=$dst") ?: return
-        try {
-            val stats = JSONObject(body).optJSONObject("stats") ?: return
-            for (a in list) {
-                val key = "${a.symbol.lowercase()}-$dst"
-                val s = stats.optJSONObject(key) ?: continue
-                val pct = s.optDouble("dayChange", Double.NaN)
-                if (pct.isNaN()) continue
-                val latest = s.optDouble("latest", Double.NaN)
-                val priceText = if (!latest.isNaN()) {
-                    if (dst == "irt") formatToman(latest.toLong()) else formatUsd(latest)
-                } else null
-                out[a.id] = Quote(pct, priceText)
-            }
-        } catch (e: Exception) { /* نوبیتکس در دسترس نیست — این دوره رد می‌شود */ }
-    }
-
-    // ── طلا و دلار: TGJU ajax.json — فیلد dp = درصد تغییر روزانه ──────────
-    private fun fetchTgjuQuotes(list: List<Asset>, out: MutableMap<String, Quote>) {
-        if (list.isEmpty()) return
-        var current: JSONObject? = null
-        for (url in TGJU_URLS) {
-            val body = httpGet(url) ?: continue
+        // لایهٔ ۲ — نوبیتکس: dayChange ٪ برای هر نماد (قیمت RLS → تومان ÷۱۰)
+        val missing = coins.filter { it.symbol !in out.mapValues { it.value }.keys && it.key !in out }
+        if (missing.isNotEmpty()) {
             try {
-                current = JSONObject(body).optJSONObject("current")
-                if (current != null) break
-            } catch (e: Exception) { /* آینهٔ بعدی */ }
+                val srcs = missing.mapNotNull { w ->
+                    w.symbol.removeSuffix("USDT").takeIf { it.isNotBlank() }?.lowercase(Locale.US)
+                }.distinct().joinToString(",")
+                if (srcs.isNotBlank()) {
+                    val url = "https://api.nobitex.ir/market/stats?srcCurrency=$srcs&dstCurrency=rls"
+                    val body = httpGet(url) ?: throw RuntimeException("no response")
+                    val o = JSONObject(body).optJSONObject("stats") ?: return out
+                    for (w in missing) {
+                        val base = w.symbol.removeSuffix("USDT").lowercase(Locale.US)
+                        val s = o.optJSONObject("$base-rls") ?: continue
+                        val pctStr = s.optString("dayChange", "").replace("%", "").trim()
+                        val pct = pctStr.toDoubleOrNull() ?: continue
+                        val latestRls = s.optDouble("latest", Double.NaN)
+                        out[w.key] = Reading(
+                            pct,
+                            if (latestRls.isFinite()) latestRls / 10.0 else null,
+                            "nobitex",
+                        )
+                    }
+                }
+            } catch (_: Exception) {
+                // هر دو منبع نشد — این دور کوین‌ها بی‌اعلان
+            }
         }
-        val cur = current ?: return
-        for (a in list) {
-            val o = cur.optJSONObject(a.symbol) ?: continue
-            val pct = o.optString("dp", "").replace(",", "").toDoubleOrNull() ?: Double.NaN
-            if (pct.isNaN()) continue
-            val price = o.optString("p", "").replace(",", "").toLongOrNull()
-            out[a.id] = Quote(pct, price?.let { formatToman(it) })
-        }
+        return out
     }
 
-    // ── helpers ───────────────────────────────────────────────────────────
-    private fun httpGet(urlStr: String): String? {
+    // ─── فلزات/دلار: فید TGJU + خط پایهٔ ۲۴ ساعته ─────────────────────────
+
+    private fun fetchMetalReadings(ctx: Context, metals: List<Watched>): Map<String, Reading> {
+        if (metals.isEmpty()) return emptyMap()
+        val byTgju = metals.associateBy { it.tgju }
+        val prices = HashMap<String, Double>() // tgju → تومان
+        var lastErr: String? = null
+        for (mirror in listOf(
+            "https://call1.tgju.org/ajax.json",
+            "https://call2.tgju.org/ajax.json",
+            "https://call.tgju.org/ajax.json",
+        )) {
+            try {
+                val body = httpGet(mirror) ?: continue
+                val current = JSONObject(body).optJSONObject("current") ?: continue
+                for ((tgju, w) in byTgju) {
+                    val p = current.optJSONObject(tgju)?.optString("p") ?: continue
+                    val clean = p.filter { it.isDigit() }
+                    val rial = clean.toLongOrNull() ?: continue
+                    if (rial <= 0) continue
+                    // v1.4.0 — رفع باگ ×۱۰: TGJU ریال می‌دهد؛ اپ تومان نشان می‌دهد
+                    prices[tgju] = rial / 10.0
+                }
+                if (prices.isNotEmpty()) { lastErr = null; break }
+            } catch (e: Exception) {
+                lastErr = e.message
+            }
+        }
+        if (prices.isEmpty()) {
+            if (lastErr != null) throw RuntimeException("tgju: $lastErr")
+            return emptyMap()
+        }
+
+        val bases = PriceAlertPrefs.bases(ctx)
+        val now = System.currentTimeMillis()
+        val out = HashMap<String, Reading>()
+        for ((tgju, w) in byTgju) {
+            val cur = prices[tgju] ?: continue
+            val b = bases.optJSONObject(w.key)
+            var base = b?.optDouble("base", Double.NaN) ?: Double.NaN
+            val at = b?.optLong("at", 0L) ?: 0L
+            if (!base.isFinite() || base <= 0 || now - at > PriceAlertPrefs.BASE_TTL_MS) {
+                // خط پایهٔ تازه — هنوز «بازهٔ ۲۴ ساعت» کامل نیست، اعلان نمی‌دهیم
+                val obj = JSONObject().put("base", cur).put("at", now)
+                bases.put(w.key, obj)
+                out[w.key] = Reading(0.0, cur, "tgju-base")
+                continue
+            }
+            val pct = (cur - base) / base * 100.0
+            out[w.key] = Reading(pct, cur, "tgju")
+        }
+        PriceAlertPrefs.saveBases(ctx, bases)
+        return out
+    }
+
+    // ─── اعلان ─────────────────────────────────────────────────────────────
+
+    private fun notify(ctx: Context, w: Watched, direction: String, r: Reading) {
+        val up = direction == "up"
+        val title = if (up) "📈 رشد قیمت" else "📉 ریزش قیمت"
+        val sb = StringBuilder()
+        sb.append(w.label).append(' ')
+        sb.append(toFa(Math.abs(r.pct)))
+        sb.append('٪').append(if (up) " رشد در ۲۴ ساعت" else " ریزش در ۲۴ ساعت")
+        r.priceToman?.let {
+            sb.append(" — اکنون: ").append(toFaGrouped(it.toLong())).append(" تومان")
+        }
+        sb.append('\n').append(if (up) "آستانه: " else "آستانه: ")
+            .append(toFa(if (w.kind == "coin") PriceAlertPrefs.coinPct(ctx) else PriceAlertPrefs.metalPct(ctx)))
+            .append('٪')
+        PriceAlertNotification.post(
+            ctx,
+            title = title,
+            text = sb.toString(),
+            alertId = w.key,
+            up = up,
+        )
+    }
+
+    private fun httpGet(url: String): String? {
         var conn: HttpURLConnection? = null
         return try {
-            conn = URL(urlStr).openConnection() as HttpURLConnection
-            conn.connectTimeout = 10_000
-            conn.readTimeout = 12_000
-            conn.instanceFollowRedirects = true
-            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 13; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36")
-            conn.setRequestProperty("Accept", "*/*")
-            if (conn.responseCode !in 200..299) null else conn.inputStream.bufferedReader().use { it.readText() }
-        } catch (e: Exception) {
+            conn = (URL(url).openConnection() as HttpURLConnection).apply {
+                connectTimeout = HTTP_TIMEOUT
+                readTimeout = HTTP_TIMEOUT
+                setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/131 Mobile Safari/537.36")
+                setRequestProperty("Accept", "*/*")
+            }
+            if (conn.responseCode !in 200..299) null
+            else conn.inputStream.bufferedReader().use { it.readText() }
+        } catch (_: Exception) {
             null
         } finally {
-            conn?.disconnect()
+            try { conn?.disconnect() } catch (_: Exception) {}
         }
-    }
-
-    private fun formatUsd(v: Double?): String? {
-        if (v == null || v.isNaN() || v <= 0) return null
-        return if (v >= 1000) "${toFaGrouped(v.toLong())} دلار" else "${toFaStr(String.format(java.util.Locale.US, "%.2f", v))} دلار"
-    }
-
-    private fun formatToman(v: Long): String = "${toFaGrouped(v)} تومان"
-
-    private fun recordState(prefs: SharedPreferences, quotes: Map<String, Quote>, error: String?) {
-        try {
-            val prefsJson = prefs.getString(KEY_STATE, "{}") ?: "{}"
-            val state = try { JSONObject(prefsJson) } catch (e: Exception) { JSONObject() }
-            state.put("lastRunAt", System.currentTimeMillis())
-            state.put("lastAssetCount", quotes.size)
-            if (error != null) state.put("lastError", error) else state.remove("lastError")
-            prefs.edit().putString(KEY_STATE, state.toString()).apply()
-        } catch (e: Exception) { /* state غیرحیاتی است */ }
     }
 }

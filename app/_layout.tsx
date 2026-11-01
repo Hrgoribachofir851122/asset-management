@@ -25,8 +25,9 @@ import { AppProvider, useApp } from '@/contexts/AppContext';
 import { ThemedAlertHost } from '@/components/ThemedAlert';
 // v1.2.0 — بنر بروزرسانی (بالای همهٔ صفحات وقتی Release جدیدی روی گیتهاب باشد)
 import UpdateBanner from '@/components/UpdateBanner';
-// v1.3.9 — مودال «تازه‌های نسخه» (فقط اولین ورود بعد از نصب/آپدیت)
+// v1.4.0 — مودال «تازه‌های نسخه» (فقط اولین ورود بعد از نصب/آپدیت)
 import WhatsNewModal from '@/components/WhatsNewModal';
+// v1.3.8 — همگام‌سازی دارایی‌های تحت‌نظر اعلان
 import { syncPriceAlertConfig } from '@/utils/priceAlertApi';
 
 const queryClient = new QueryClient({
@@ -102,9 +103,9 @@ function RootNavigator() {
 export default function RootLayout() {
   useReactQueryAppStateSync();
 
-  // v1.3.8 — همگام‌سازی لیست دارایی‌های «تحت نظر» سرویس اعلان رشد قیمت با
-  // آخرین کش‌های موجودی (روی وب no-op است). اگر کاربر اعلان را فعال کرده باشد،
-  // سرویس پس‌زمینه با همین لیست کار می‌کند.
+  // v1.3.8/1.4.0 — همگام‌سازی لیست دارایی‌های «تحت نظر» سرویس اعلان رشد/ریزش
+  // قیمت با آخرین کش‌های موجودی (روی وب no-op است). اگر کاربر اعلان را روشن
+  // کرده باشد، سرویس پس‌زمینه با همین لیست کار می‌کند.
   useEffect(() => {
     const timer = setTimeout(() => {
       syncPriceAlertConfig().catch(() => {});
@@ -118,7 +119,7 @@ export default function RootLayout() {
         <QueryClientProvider client={queryClient}>
           <AppProvider>
             <RootNavigator />
-            {/* v1.3.9 — بالای همهٔ صفحات؛ فقط برای نسخهٔ جدید، یک بار */}
+            {/* v1.4.0 — بالای همهٔ صفحات؛ فقط برای نسخهٔ جدید، یک بار */}
             <WhatsNewModal />
           </AppProvider>
         </QueryClientProvider>

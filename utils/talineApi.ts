@@ -1,10 +1,10 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getServerUrl } from '@/utils/scanServerApi';
 import { persianToEnglishDigits } from '@/utils/iranMarketApi';
 
 /**
- * talineApi.ts — v1.3.8
+ * talineApi.ts — v1.3.9
  *
  * «قیمت خرید و فروش هر گرم طلای آب‌شده از سایت طلاین» — the LIVE rate of
  * taline.ir, shown in the دارایی ریالی section under the TGJU price grid.
@@ -151,35 +151,28 @@ function parseSitePage(html: string): TalineGold | null {
   return { buy, sell, updatedAt: Date.now(), source: 'taline.ir' };
 }
 
-/**
- * v1.3.8 — نسخهٔ وب: مرتب‌سازی لایه‌ها برای مرورگر.
- *   در مرورگر، fetch مستقیم به t.me همیشه با خطای CORS می‌میرد، پس آینه‌های
- *   CORS-دار اول می‌آیند (allorigins با تازگی‌شکن برای رد شدن از کشِ کوتاهش،
- *   بعد codetabs) و کانال مستقیم حذف می‌شود. تست واقعی همین امروز:
- *   allorigins/raw از مرورگر با Origin سایت ما جواب 200 + زوج قیمت می‌داد.
- */
+/** لایه‌های زنده — همهٔ آینه‌های تلگرام + سایت + سرور، به‌صورت موازی. */
 async function fetchLiveParallel(): Promise<TalineGold | null> {
   const tgEncoded = encodeURIComponent(TALINE_TG_URL);
   const isWeb = Platform.OS === 'web';
 
-  const layerDirectTg = async (): Promise<TalineGold | null> => {
+  const layerDirectTg = (async () => {
     if (isWeb) return null; // مرورگر: CORS اجازهٔ خواندن t.me نمی‌دهد
     const html = await fetchWithTimeout(TALINE_TG_URL, BROWSER_HEADERS);
     return html ? parseTelegramPage(html) : null;
-  };
+  })();
 
-  const layerAllorigins = async (): Promise<TalineGold | null> => {
-    // &cb= — کشِ چندثانیه‌ای خود allorigins را دور می‌زند (کد هر بار متفاوت)
-    const cb = Date.now().toString(36);
+  // v1.3.9 — &cb= کشِ چندثانیه‌ای خود allorigins را دور می‌زند (هر بار کد جدید)
+  const layerAllorigins = (async () => {
     const html = await fetchWithTimeout(
-      `https://api.allorigins.win/raw?url=${tgEncoded}&cb=${cb}`,
+      `https://api.allorigins.win/raw?url=${tgEncoded}&cb=${Date.now().toString(36)}`,
       BROWSER_HEADERS,
     );
     return html ? parseTelegramPage(html) : null;
-  };
+  })();
 
-  // واریانت JSON همان سرویس (استخر جداگانهٔ نرخ‌محدودیتش):
-  const layerAlloriginsGet = async (): Promise<TalineGold | null> => {
+  // واریانت JSON همان سرویس (استخر جداگانهٔ نرخ‌محدودیتش)
+  const layerAlloriginsGet = (async () => {
     const body = await fetchWithTimeout(
       `https://api.allorigins.win/get?url=${tgEncoded}&cb=${Date.now().toString(36)}`,
       { ...BROWSER_HEADERS, Accept: 'application/json' },
@@ -191,7 +184,7 @@ async function fetchLiveParallel(): Promise<TalineGold | null> {
     } catch {
       return null;
     }
-  };
+  })();
 
   const layerCodetabs = (async () => {
     const html = await fetchWithTimeout(`https://api.codetabs.com/v1/proxy?quest=${tgEncoded}`, BROWSER_HEADERS);
@@ -227,16 +220,14 @@ async function fetchLiveParallel(): Promise<TalineGold | null> {
     return html ? parseSitePage(html) : null;
   })();
 
-  const mirrorLayers = [layerAllorigins(), layerAlloriginsGet(), layerCodetabs, layerCorsproxy];
   /**
    * v1.3.9 — وب: سرور اول. سایتِ روی ریلوی /taline-gold را از همان دامنه
    * می‌گیرد (same-origin، بدون CORS؛ سرور با زنجیرهٔ تلگرام+آینه+کش دیسک).
-   * آینه‌های مرورگری فقط پشتیبانِ همان‌اند. تست همان روز: سرور محلی
-   * با زنجیرهٔ جدید «ok:true» و نرخ زندهٔ کانال داد.
+   * آینه‌های مرورگری فقط پشتیبان‌اند.
    */
   const results = isWeb
-    ? await Promise.allSettled([layerServer, ...mirrorLayers, layerSite])
-    : await Promise.allSettled([layerDirectTg(), layerServer, ...mirrorLayers, layerSite]);
+    ? await Promise.allSettled([layerServer, layerAllorigins, layerAlloriginsGet, layerCodetabs, layerCorsproxy, layerSite])
+    : await Promise.allSettled([layerDirectTg, layerServer, layerAllorigins, layerAlloriginsGet, layerCodetabs, layerCorsproxy, layerSite]);
   // اولویت: (موبایل: کانال مستقیم →) سرور → آینه‌ها → سایت
   for (const r of results) {
     if (r.status === 'fulfilled' && r.value) return r.value;

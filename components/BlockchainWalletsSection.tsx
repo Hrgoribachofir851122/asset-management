@@ -44,6 +44,8 @@ import {
 } from '@/utils/blockchainWalletApi';
 
 import { ThemedAlert } from '@/components/ThemedAlert';
+// v1.4.0 — کادر چشمک‌زن رشد/ریزش قیمت
+import BlinkFrame from '@/components/BlinkFrame';
 // v1.2.0 — کارت پیام IP تحریمی (جایگزین کامل محتوای تب با IP ایران)
 import IpBlockedNotice from '@/components/IpBlockedNotice';
 /**
@@ -1149,7 +1151,17 @@ function BlockchainWalletCard({
             const netMeta = t.network ? NETWORKS[t.network] : null;
             const showNet = !!netMeta && wallet.networks.length > 1;
             return (
-              <View key={`${t.symbol}-${t.name}`} style={styles.tokenRow}>
+              // v1.4.0 — کادر چشمک‌زن رشد/ریزش: همان تغییر ٪ ۲۴ ساعته‌ای که
+              // اعلان می‌گیرد؛ برگشت زیر آستانه = خاموش‌شدن خودکار
+              <BlinkFrame
+                key={`${t.symbol}-${t.name}`}
+                blinkKey={`coin:${t.symbol}`}
+                price={t.priceUsd ?? 0}
+                pct24h={t.change24hPct ?? null}
+                borderRadius={12}
+                testID={`blink-coin-${t.symbol}`}
+              >
+              <View style={styles.tokenRow}>
                 {/* راست: آیکون واقعی ارز + نشان کوچک شبکه روی گوشه آیکون */}
                 <View style={styles.tokenIconWrap}>
                   {t.icon ? (
@@ -1259,6 +1271,7 @@ function BlockchainWalletCard({
                   ) : null}
                 </View>
               </View>
+              </BlinkFrame>
             );
           })}
 

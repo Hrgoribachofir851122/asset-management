@@ -4,65 +4,49 @@
 
 ---
 
-## 2026-11-01 — نسخه 1.3.9 (versionCode 13) — «رفع باگ لوکال فارسی + وبِ طلاین + اسکن بی‌صدا»
+## 2026-11-01 — نسخه 1.4.0 (versionCode 14) — «قیمت درست اعلان + لوگو + ریزش + چشمک‌زن»
 
-**درخواست کاربر:** ① وب هنوز «قیمت طلایین موقتاً در دسترس نیست» می‌دهد ② اسکن ۳ ثانیه‌ای IP
-در بکگراند و بدون اینکه کاربر بفهمد تنظیمات رفرش می‌شود + رفرش دستی بماند ③ منوهای کشویی
-اعلان رشد قیمت: رنگ بکگراند متناسب + معلوم باشد هر نوار مال چه اعلانی است (با عکس) ④ بعد از
-نصب هر نسخه، فقط بار اول یک مودال هم‌تم تغییرات را نشان بدهد و با بستن، دیگر نیاید.
+**زمینه:** سندباکس ری‌سایکل شد و کل کارهای 1.3.8/1.3.9 از درخت پروژه پرید
+(چک‌پوینت‌ها فقط تا 1.3.7 بودند؛ GoFile هم بدون guest token قابل بازیابی نبود).
+کل سرویس اعلان + بهبودهای 1.3.9 از نو ساخته شد و ویژگی‌های جدید 1.4.0 رویش
+اضافه شد — این بار با معماری ساده‌تر و مقاوم‌تر (SharedPreferences به‌جای
+پارس SQLite AsyncStorage از داخل کارگر).
 
-**یافته‌ها:**
-- عکس کاربر یک باگ بحرانی را لو داد: «fetch error: length=10; index=1730» — DecimalFormat
-  با لوکال فارسی گوشی، رقم فارسی تولید می‌کرد و FA_DIGITS[c-'0'] ایندکس ۱۷۳۰ از آرایهٔ ۱۰تایی
-  می‌گرفت → متن اعلان می‌شکست → **اعلان روی گوشی کاربر هرگز ارسال نمی‌شد**. رفع: Locale.US
-  + نگاشت فقط ASCII (toFaStr با '0'..'9').
-- آدرس واقعی ریلوی: asset-management1.up.railway.app (از scanServerApi.ts). سرور بالاست ولی
-  /taline-gold → {"ok":false,"error":"taline-empty"} → server.js قدیمی روی ریلوی است؛ zips قبلی
-  server.js را نداشتند. t.me از IP دیتاسنتر جواب می‌دهد (کاشی ۱۳۳KB با ۲۰ «گرم»).
-- server.js: لایهٔ آینهٔ allorigins/codetabs بعد از تلگرام مستقیم اضافه شد؛ تست محلی (PORT=3977):
-  {"ok":true,"buy":25546089,...,"source":"telegram:@TalinePrice"} ✓ این بار در changed-zip هست.
-- talineApi.ts وب: سرور اول (same-origin)، بعد آینه‌ها، بعد سایت.
+**۱. ریشهٔ باگ ×۱۰ قیمت اعلان:** TGJU ریال می‌دهد؛ iranMarketApi ÷۱۰ می‌کند ولی
+کارگر قبلی عدد خام را تومان می‌نوشت. (فرضیهٔ «خط پایه» هم بود ولی اعداد کاربر —
+۲۵,۵۸۰,۰۰۰ تومان درست، ۲۵۵,۸۰۰,۰۰۰ در اعلان — دقیقاً ÷۱۰ بود.)
 
-**بقیه:** IpStatusCard — چک auto بدون setChecking (اسپینر فقط manual)، مقایسه state قبل از
-setInfo، خط IP/کشور همیشه رندر (بدون پرش ارتفاع)، AppState gate برای توقف پول در بکگراند.
-DropdownPicker — propهای showLabelOnBar + triggerBackgroundColor؛ دو منوی آستانه با برچسب روی نوار
-(«🔔 کوین‌ها…» / «🥇 طلا و دلار…») و بکگراند colors.dark.background.
-WhatsNewModal + constants/whatsNew.ts — کلید @whats_new_seen_version؛ نسخه‌های جدیدتر از آخرین
-دیده‌شده یکجا نشان داده می‌شوند؛ بستن → ذخیره نسخه فعلی. با تأخیر ۲.۵ثانیه بعد از لانچ.
+**۲. معماری نو سرویس اعلان:**
+- PriceAlertPrefs (SharedPreferences): config/watched/status/fired/base.
+- PriceAlertWorker (CoroutineWorker): کوین‌ها = تغییر٪ ۲۴ساعتهٔ بایننس
+  (ticker?symbols=[...]) با fallback نوبیتکس dayChange؛ فلزات/دلار = فید
+  call1/2/call.tgju ajax.json با ÷۱۰ و خط پایهٔ ۲۴ ساعته (base+at، ری‌ست بعد
+  از ۲۴س). جهت‌ها: up ≥ +thr، down ≤ −thr؛ فقط گذر از آستانه اعلان (fired map،
+  برگشت زیر آستانه = re-arm)، سقف ۶ اعلان در هر اجرا.
+- PriceAlertNotification: کانال‌های جدای رشد/ریزش، smallIcon=ic_notification
+  (سیلوئت سفید لوگو)، largeIcon=ic_logo_round، رنگ سبز/قرمز.
+- PriceAlertModule (ReactPackage دستی در MainApplication): configure/testAlert/
+  checkNow/getStatus/isIgnoringBattery/requestIgnoreBattery/openBatterySettings.
+- BootReceiver + مجوزهای POST_NOTIFICATIONS/RECEIVE_BOOT_COMPLETED/WAKE_LOCK/
+  REQUEST_IGNORE_BATTERY_OPTIMIZATIONS + work-runtime-ktx 2.9.1.
+- ic_notification/ic_logo_round با اسکریپت make_notification_icon.py از
+  assets/images/icon.png (ماسک روشنایی → سیلوئت سفید؛ ۱۶۳۵ پیکسل پر).
 
-**بیلد:** دوباره OOM — این بار در lintVitalAnalyzeRelease + یک KotlinCompileDaemon تازه و یک
-node server.js سرگردانِ تست. راه‌حل ماندگار در ریپو: lint { checkReleaseBuilds=false } +
-kotlin.compiler.execution.strategy=in-process. بیلد سبز: ۱۱.۸۷MB، versionCode 13.
+**۳. چشمک‌زن رشد/ریزش (UI):** utils/growthSignals (هوک useGrowthBlink: کش
+ماژول‌سطح baseline ۲۴ساعته + config ۶۰ثانیه‌ای) + BlinkFrame (overlay چشمک‌زن
+بدون جابه‌جایی چیدمان؛ دو حالت: state از پدر یا blinkKey+price خودکار).
+سیم‌کشی: ردیف‌های بلاکچین (change24hPct واقعی بایننس)، BalanceRow/AggregatedRow
+صرافی‌ها (قیمت واحد = value÷qty)، PriceChip های طلای ۱۸/۲۴، سکه امامی/بهار، دلار.
 
+**۴. بازسازی 1.3.9:** talineApi (&cb + allorigins/get + سرور اول روی وب)،
+server.js (لایهٔ آینه؛ تست محلی ok:true با نرخ زندهٔ کانال)، IpStatusCard
+(چک بی‌صدا + AppState gate + خط همیشه‌رندر)، DropdownPicker (showLabelOnBar)،
+WhatsNewModal + whatsNew.ts.
 
----
-
-## 2026-11-01 — نسخه 1.3.8 (versionCode 12) — «اعلان رشد قیمت + نسخهٔ وب طلاین»
-
-**درخواست کاربر:** ① اگر ارزِ کیف پول/صرافی در یک روز ≥۲۰٪ رشد کند اعلان بیاید، حتی وقتی برنامه
-کاملاً بسته است و اینترنت تازه وصل شده — بدون بازکردن برنامه. ② نسخهٔ وبِ روی ریلوی هم
-«قیمت طلایین در دسترس نیست» می‌دهد. ③ اعلان طلا/دلار برای تغییر ≥۱٪ هم اضافه شود. (تأیید شد)
-
-**ساختار فنی:**
-- بومی (Kotlin): `PriceAlertWorker` روی WorkManager دوره‌ای ۱۵ دقیقه‌ای با قید
-  NetworkType.CONNECTED → با وصل‌شدن اینترنت اجرا می‌شود، حتی با برنامهٔ بسته.
-  کوین‌ها: Binance ticker 24hr گروهی (با فیلترشکن) → تکی → نوبیتکس apiv2 (بدون فیلترشکن).
-  استیبل‌ها: نوبیتکس IRT. طلا/دلار: فیلد dp فایل ajax.json تل‌جو (تست زنده: geram18 dp=1.16).
-  رشد ≥ آستانه → NotificationCompat روی کانال price_alerts + dedupe روزانه + خلاصهٔ گروهی.
-- پل: `PriceAlertModule` (configure/requestPermission/test/runNow/getStatus/battery)
-  + `MainActivity.onRequestPermissionsResult` → callback ماژول.
-- JS: `utils/priceAlertApi.ts` لیست دارایی‌ها را از کش‌های موجودی صرافی‌ها
-  (`@wallet_balance_cache_*`) و کیف پول‌های بلاکچین می‌سازد و در app start +
-  هر تازه‌سازی موجودی + تغییر تنظیمات به بومی می‌فرستد. بخش تنظیمات در
-  `app/(tabs)/settings/index.tsx` + همگام‌سازی در `_layout` و صفحهٔ کیف پول.
-- وب طلاین: مرتب‌سازی لایه‌ها برای مرورگر (allorigins raw + get با cb → codetabs →
-  corsproxy → سرور → سایت؛ t.me مستقیم فقط موبایل). تست CORS همان روز:
-  فقط allorigins-raw با Origin سایت جواب 200 می‌داد.
-
-**مشکل بیلد (برای یادآوری):** R8/Metro در کانتینر ۴ گیگی OOM می‌شد — ریشه: یک
-KotlinCompileDaemon سرگردان با heap 2560m و keepalive دو ساعته ۱.۱ گیگ نگه داشته بود؛
-kill + NODE_OPTIONS=1280 برای Metro → بیلد سبز شد (۱۱.۸۷MB، minify سر جایش). یادآوری:
-قبل از بیلد `ps aux | grep KotlinCompileDaemon` و kill کن.
+**نکتهٔ ساخت:** lint disable + kotlin in-process باید بعد از هر ری‌سایکل
+دوباره چک شود (gradle.properties/build.gradle اکنون درست‌اند). OOM دوباره در
+lintVitalAnalyzeRelease بود که با disable حل شد. JDK17/SDK دوباره نصب شدند
+(setup_env.sh). یک خطای Kotlin هم بود: currentActivity → reactContext.currentActivity.
 
 
 ## 2026-10-31 — نسخه 1.3.7 (versionCode 11) — «قیمت طلایین بدون سرور»

@@ -194,7 +194,7 @@ export default function IpStatusCard() {
       </View>
 
       {/* v1.3.9 — خط IP/کشور همیشه رندر می‌شود (با «—» تا رسیدن نتیجه) تا
-          ارتفاع کارت با آمدن نتیجهٔ اسکن عوض نشود و بخش تنظیمات تکون نخورد */}
+          ارتفاع کارت عوض نشود و بخش تنظیمات تکون نخورد */}
       <Text style={styles.metaText}>
         IP: {info?.ip ?? '—'} • کشور: {unknown ? '—' : countryLabel}
         {info?.country ? ` (${info.country})` : ''}

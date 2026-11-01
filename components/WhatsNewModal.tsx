@@ -1,10 +1,10 @@
 /**
- * components/WhatsNewModal.tsx — v1.3.9 «تازه‌های نسخه»
+ * components/WhatsNewModal.tsx — v1.4.0 «تازه‌های نسخه»
  *
  * بعد از نصب/آپدیت، در **اولین ورود** پنجرهٔ تغییرات را با تم برنامه نشان
  * می‌دهد. با بستن، نسخهٔ دیده‌شده ذخیره می‌شود و دیگر هیچ‌وقت برای همان
- * نسخه نمایش داده نمی‌شود. اگر کاربر چند نسخه را یکجا رد کرده باشد (مثلاً
- * از ۱.۳.۷ به ۱.۳.۹)، تازه‌های همهٔ نسخه‌های میانی را یکجا می‌بیند.
+ * نسخه نمایش داده نمی‌شود. اگر کاربر چند نسخه را یکجا رد کرده باشد،
+ * تازه‌های همهٔ نسخه‌های میانی را یکجا می‌بیند.
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
@@ -32,12 +32,12 @@ export default function WhatsNewModal() {
         const fresh = seen
           ? WHATS_NEW.filter((e) => compareVersions(e.version, seen) > 0)
           : WHATS_NEW.filter((e) => compareVersions(e.version, APP_VERSION) <= 0);
-        if (fresh.length > 0 && alive) {
+        if (fresh.length > 0) {
           setTimeout(() => {
             if (alive) setEntries(fresh);
           }, SHOW_DELAY_MS);
         } else if (!seen) {
-          // نصب تازه بدون entry قدیمی — فقط علامت بزن که دیگر نشان نده
+          // بدون entry — فقط علامت بزن که دیگر باز نشود
           await AsyncStorage.setItem(SEEN_KEY, APP_VERSION);
         }
       } catch {
@@ -104,7 +104,7 @@ export default function WhatsNewModal() {
   );
 }
 
-/** 1.3.9 → ۱.۳.۹ */
+/** 1.4.0 → ۱.۴.۰ */
 function toFaVersion(v: string): string {
   const fa = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
   return v.replace(/\d/g, (d) => fa[Number(d)]).replace(/\./g, '٫');
