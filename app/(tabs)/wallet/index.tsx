@@ -82,6 +82,7 @@ import {
   computeBlockchainPnl,
   // v1.6.0 — آیکون واقعی ارزها + درصد تغییر تایم‌فریم برای ردیف‌های صرافی
   getAssetIconUrls,
+  directIconCdnUrl,
   fetchAssetChangePct,
 } from '@/utils/blockchainWalletApi';
 // v1.7.0 — fallback آیکون از سرور خودمان وقتی CDN روی نت گوشی باز نمی‌شود
@@ -4050,14 +4051,23 @@ function AssetIcon({ symbol }: { symbol: string }) {
     }, 6_000);
     return () => clearTimeout(t);
   }, [url, imgLoaded]);
+  // v1.4.1 — اگر سرور جواب نداد (مثل قطعی 502 ریلی)، سکه‌های شناخته‌شده
+  // آیکونشان را مستقیم از CDN عمومی می‌گیرند — بدون واسطهٔ سرور خودمان.
+  const cdnUrl = useMemo(() => directIconCdnUrl(sym), [sym]);
+  const [cdnFailed, setCdnFailed] = useState(false);
+  const effectiveUrl = url ?? (cdnFailed ? undefined : cdnUrl);
+  const usingCdn = !url && !!cdnUrl;
   return (
     <View style={styles.assetIconWrap}>
-      {url ? (
+      {effectiveUrl ? (
         <Image
-          source={{ uri: url }}
+          source={{ uri: effectiveUrl }}
           style={styles.assetIconImg}
           onLoad={() => setImgLoaded(true)}
-          onError={() => setImgFailed(true)}
+          onError={() => {
+            if (usingCdn) setCdnFailed(true);
+            else setImgFailed(true);
+          }}
         />
       ) : (
         <View style={styles.assetBadge}>

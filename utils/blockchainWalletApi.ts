@@ -2483,6 +2483,18 @@ async function flushIconBatch(): Promise<void> {
 
 /** آیکون‌های واقعی ارزها برای ردیف‌های صرافی — همان منبع بخش کیف پول.
  *  v1.7.0 — دسته‌ای: صدها ردیف همزمان = فقط یک درخواست به سرور. */
+/**
+ * v1.4.1 — آیکون مستقیم از CDN عمومی (بدون سرور خودمان!). اگر سرور ریلی
+ * در دسترس نباشد (مثل قطعی 502)، سکه‌های شناخته‌شده همچنان آیکون واقعی
+ * دارند — از jsdelivr (معمولاً بدون فیلتر و سریع روی نت ایران).
+ * پوشش محدود به لیست spothq است؛ توکن‌های خاص همان مسیر سرور/حرف را دارند.
+ */
+export function directIconCdnUrl(symbol: string): string | undefined {
+  const sym = (symbol ?? '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (!sym || sym.length > 8) return undefined;
+  return `https://cdn.jsdelivr.net/gh/spothq/cryptocurrency-icons@master/svg/color/${sym.toLowerCase()}.svg`;
+}
+
 export async function getAssetIconUrls(
   symbols: string[]
 ): Promise<Record<string, string>> {

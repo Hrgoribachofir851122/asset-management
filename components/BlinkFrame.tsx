@@ -85,6 +85,44 @@ export default function BlinkFrame({
   );
 }
 
+/**
+ * v1.4.1 — نسخهٔ بدونِ wrapper: خودِ کامپوننت مقصد را relative می‌کنیم و
+ * این overlay را داخلش می‌گذاریم (برای چیپ‌های flexBasis‌دار تا شبکهٔ
+ * قیمت‌های لحظه‌ای هیچ تغییری در اندازه/چیدمان نکند).
+ */
+export function BlinkOverlay({ state, borderRadius = 12 }: { state: GrowthState; borderRadius?: number }) {
+  const pulse = useRef(new Animated.Value(state ? 1 : 0)).current;
+
+  useEffect(() => {
+    if (!state) {
+      pulse.setValue(0);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 650, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0.25, duration: 650, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [state, pulse]);
+
+  if (!state) return null;
+  const color = state === 'up' ? colors.dark.green : colors.dark.red;
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        styles.overlay,
+        { borderRadius, borderWidth: 2, borderColor: color, opacity: pulse },
+      ]}
+    >
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: color, opacity: 0.07, borderRadius }]} />
+    </Animated.View>
+  );
+}
+
 const styles = StyleSheet.create({
   host: {
     position: 'relative',

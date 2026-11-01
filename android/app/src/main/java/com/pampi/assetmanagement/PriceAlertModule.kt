@@ -1,6 +1,5 @@
 package com.pampi.assetmanagement
 
-import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -94,34 +93,46 @@ class PriceAlertModule(private val reactContext: ReactApplicationContext) :
     @ReactMethod
     fun requestIgnoreBatteryOptimizations(promise: Promise) {
         try {
-            val activity: Activity? = reactContext.currentActivity
-            if (activity == null) {
-                promise.resolve(false)
+            // v1.4.1 — روی برخی گوشی‌ها (شیائومی/Some bridgeless states)
+            // currentActivity تهی است یا پنجرهٔ سیستم باز نمی‌شود؛ JS خودش
+            // بعدش لیست تنظیمات را باز می‌کند. اگر اکتیویتی هست، دیالوگ رسمی.
+            val pm = reactContext.getSystemService(android.content.Context.POWER_SERVICE) as PowerManager
+            if (pm.isIgnoringBatteryOptimizations(reactContext.packageName)) {
+                promise.resolve(true) // از قبل مجاز — هیچ پنجره‌ای لازم نیست
                 return
             }
-            if (Build.VERSION.SDK_INT >= 23) {
-                val pm = reactContext.getSystemService(android.content.Context.POWER_SERVICE) as PowerManager
-                if (!pm.isIgnoringBatteryOptimizations(reactContext.packageName)) {
-                    val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
-                        .setData(Uri.parse("package:${reactContext.packageName}"))
-                    activity.startActivityForResult(intent, 9412)
-                }
-            }
+            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                .setData(Uri.parse("package:${reactContext.packageName}"))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            reactContext.startActivity(intent)
             promise.resolve(true)
         } catch (e: Exception) {
-            promise.reject("BATTERY_FAIL", e.message, e)
+            promise.resolve(false) // JS → لیست بهینه‌سازی باتری را باز می‌کند
+        }
+    }
+
+    /** v1.4.1 — صفحهٔ اطلاعات برنامه (مسیر مطمئن شیائومی/هوآوی: Battery → No restrictions) */
+    @ReactMethod
+    fun openAppDetailsSettings(promise: Promise) {
+        try {
+            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                .setData(Uri.parse("package:${reactContext.packageName}"))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            reactContext.startActivity(intent)
+            promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("APPDETAILS_FAIL", e.message, e)
         }
     }
 
     @ReactMethod
     fun openBatterySettings(promise: Promise) {
         try {
-            val activity: Activity? = reactContext.currentActivity
-            if (activity != null) {
-                activity.startActivity(
-                    Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS),
-                )
-            }
+            // v1.4.1 — بدون نیاز به Activity (FLAG_ACTIVITY_NEW_TASK از خود context)
+            reactContext.startActivity(
+                Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
             promise.resolve(true)
         } catch (e: Exception) {
             promise.reject("BATTERY_FAIL", e.message, e)

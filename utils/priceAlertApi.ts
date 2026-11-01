@@ -49,6 +49,7 @@ interface NativePriceAlert {
   isIgnoringBatteryOptimizations(): Promise<boolean>;
   requestIgnoreBatteryOptimizations(): Promise<boolean>;
   openBatterySettings(): Promise<boolean>;
+  openAppDetailsSettings(): Promise<boolean>;
 }
 
 function native(): NativePriceAlert | null {
@@ -198,6 +199,15 @@ export async function requestIgnoreBatteryOptimizations(): Promise<boolean> {
 export async function openBatterySettings(): Promise<boolean> {
   try {
     return (await native()?.openBatterySettings()) ?? false;
+  } catch {
+    return false;
+  }
+}
+
+/** v1.4.1 — صفحهٔ اطلاعات برنامه (شیائومی/هوآوی: Battery → No restrictions) */
+export async function openAppDetailsSettings(): Promise<boolean> {
+  try {
+    return (await native()?.openAppDetailsSettings()) ?? false;
   } catch {
     return false;
   }

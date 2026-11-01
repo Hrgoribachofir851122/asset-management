@@ -42,12 +42,49 @@ import {
   PNL_PERIODS,
   PnlPeriod,
 } from '@/utils/blockchainWalletApi';
+import { directIconCdnUrl } from '@/utils/blockchainWalletApi';
 
 import { ThemedAlert } from '@/components/ThemedAlert';
 // v1.4.0 — کادر چشمک‌زن رشد/ریزش قیمت
 import BlinkFrame from '@/components/BlinkFrame';
 // v1.2.0 — کارت پیام IP تحریمی (جایگزین کامل محتوای تب با IP ایران)
 import IpBlockedNotice from '@/components/IpBlockedNotice';
+
+// v1.4.1 — آیکون توکن با زنجیرهٔ منبع: سرور → CDN عمومی (بدون سرور) → نشان حرفی.
+// قطع بودن سرور (مثل 502 ریلی) دیگر یعنی حرفِ خالی نیست — سکه‌های شناخته‌شده
+// آیکون واقعی از jsdelivr می‌گیرند.
+function TokenIconImg({ symbol, icon, color }: { symbol: string; icon?: string; color: string }) {
+  const cdn = directIconCdnUrl(symbol);
+  const [src, setSrc] = useState<string | undefined>(icon ?? cdn);
+  useEffect(() => {
+    setSrc(icon ?? cdn);
+  }, [icon, cdn]);
+  const failed = src === undefined;
+  return (
+    <>
+      <View
+        style={[
+          styles.tokenIcon,
+          failed ? undefined : { position: 'absolute', opacity: 0 },
+          { backgroundColor: color + '26' },
+        ]}
+      >
+        <Text style={[styles.tokenIconText, { color }]}>{symbol.slice(0, 1)}</Text>
+      </View>
+      {!failed && (
+        <Image
+          source={{ uri: src }}
+          style={styles.tokenIconImg}
+          onError={() => {
+            // سرور خراب بود → CDN عمومی؛ آن هم نبود → نشان حرفی
+            if (src !== cdn && cdn) setSrc(cdn);
+            else setSrc(undefined);
+          }}
+        />
+      )}
+    </>
+  );
+}
 /**
  * BlockchainWalletsSection — v1.4.17
  *
@@ -1162,31 +1199,15 @@ function BlockchainWalletCard({
                 testID={`blink-coin-${t.symbol}`}
               >
               <View style={styles.tokenRow}>
-                {/* راست: آیکون واقعی ارز + نشان کوچک شبکه روی گوشه آیکون */}
+                {/* راست: آیکون واقعی ارز + نشان کوچک شبکه روی گوشه آیکون
+                    v1.4.1 — اگر سرور آیکون نداد/قطع بود، مستقیم از CDN عمومی
+                    می‌آید و اگر آن هم نبود، نشان حرفی زیرش همیشه هست */}
                 <View style={styles.tokenIconWrap}>
-                  {t.icon ? (
-                    <Image source={{ uri: t.icon }} style={styles.tokenIconImg} />
-                  ) : (
-                    <View
-                      style={[
-                        styles.tokenIcon,
-                        {
-                          backgroundColor: (t.network
-                            ? NETWORKS[t.network].color
-                            : meta.color) + '26',
-                        },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.tokenIconText,
-                          { color: t.network ? NETWORKS[t.network].color : meta.color },
-                        ]}
-                      >
-                        {t.symbol.slice(0, 1)}
-                      </Text>
-                    </View>
-                  )}
+                  <TokenIconImg
+                    symbol={t.symbol}
+                    icon={t.icon}
+                    color={t.network ? NETWORKS[t.network].color : meta.color}
+                  />
                   {showNet && netMeta && (
                     <View style={[styles.tokenNetBadge, { backgroundColor: netMeta.color }]}>
                       <Text style={styles.tokenNetBadgeText} numberOfLines={1}>

@@ -18,8 +18,9 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import colors from '@/constants/colors';
 import { createThemedStyles } from '@/utils/themeStyles';
-// v1.4.0 — کادر چشمک‌زن رشد/ریزش قیمت (طلای ۱۸، سکه‌ها، دلار)
-import BlinkFrame from '@/components/BlinkFrame';
+// v1.4.0/1.4.1 — چشمک‌زن رشد/ریزش: overlay داخل چیپ (چیدمان دست‌نخورده)
+import { BlinkOverlay } from '@/components/BlinkFrame';
+import { useGrowthBlink } from '@/utils/growthSignals';
 import {
   fetchIranMarketPrices,
   parseTomanInput,
@@ -921,12 +922,16 @@ function PriceChip({
         ? `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
         : formatFullToman(value)
       : '…';
-  const inner = (
+  // v1.4.1 — چشمک‌زن به‌صورت overlay داخل خود چیپ (نه wrapper) تا چیدمان
+  // شبکهٔ خانه‌های قیمت — همان اندازه‌های یکنواخت قبل — دست‌نخورده بماند.
+  const { state: blinkState } = useGrowthBlink(blinkKey ?? null, value ?? 0, null);
+  return (
     <View
       style={[
         styles.priceChip,
         tone === 'open' && styles.priceChipOpen,
         tone === 'closed' && styles.priceChipClosed,
+        blinkKey ? styles.priceChipHost : null,
       ]}
     >
       <Text style={styles.priceChipLabel}>{label}</Text>
@@ -940,14 +945,8 @@ function PriceChip({
       >
         {text}
       </Text>
+      {blinkKey ? <BlinkOverlay state={blinkState} borderRadius={8} /> : null}
     </View>
-  );
-  // v1.4.0 — رشد/ریزش از آستانهٔ اعلان → کادر چشمک‌زن تا برگشت زیر آستانه
-  if (!blinkKey) return inner;
-  return (
-    <BlinkFrame blinkKey={blinkKey} price={value ?? 0} borderRadius={12}>
-      {inner}
-    </BlinkFrame>
   );
 }
 
@@ -1134,6 +1133,10 @@ const styles = createThemedStyles(() =>
       fontWeight: '800' as const,
       color: colors.dark.text,
       marginTop: 2,
+    },
+    // v1.4.1 — میزبان overlay چشمک‌زن داخل خود چیپ
+    priceChipHost: {
+      position: 'relative',
     },
     priceChipEmpty: {
       color: colors.dark.textSecondary,

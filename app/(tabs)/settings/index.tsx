@@ -63,12 +63,14 @@ import {
   isIgnoringBatteryOptimizations,
   requestIgnoreBatteryOptimizations,
   openBatterySettings,
+  openAppDetailsSettings,
   type PriceAlertConfig,
   type PriceAlertStatus,
 } from '@/utils/priceAlertApi';
 
 /** آستانه‌های اعلان — گزینه‌ها به درصد */
 const COIN_THRESHOLD_OPTIONS = [
+  { key: '5', label: '۵ درصد' },
   { key: '10', label: '۱۰ درصد' },
   { key: '15', label: '۱۵ درصد' },
   { key: '20', label: '۲۰ درصد' },
@@ -356,8 +358,15 @@ function PriceAlertCard() {
   const handleBattery = useCallback(async () => {
     setBusy('battery');
     try {
-      await requestIgnoreBatteryOptimizations();
-      setTimeout(() => void isIgnoringBatteryOptimizations().then(setBatteryOk), 2500);
+      const fired = await requestIgnoreBatteryOptimizations();
+      // پنجرهٔ سیستمی باز نشد (مثل شیائومی) → خودکار تنظیمات باتری باز می‌شود
+      if (!fired) {
+        await openBatterySettings();
+        flash('پنجرهٔ مستقیم باز نشد — لیست «بهینه‌سازی باتری» باز شد؛ برنامه را پیدا و «Allow» کنید');
+      } else {
+        flash('پنجرهٔ سیستم باز شد — «Allow» را بزنید. اگر پنجره‌ای نیامد، دکمهٔ «تنظیمات برنامه» را بزنید');
+      }
+      setTimeout(() => void isIgnoringBatteryOptimizations().then(setBatteryOk), 3000);
     } finally {
       setBusy(null);
     }
@@ -367,20 +376,32 @@ function PriceAlertCard() {
     setBusy('battery');
     try {
       await openBatterySettings();
+      flash('لیست «بهینه‌سازی باتری» باز شد — برنامه را از لیست انتخاب و Allow کنید');
     } finally {
       setBusy(null);
     }
   }, []);
 
-  if (Platform.OS !== 'android') {
-    return null; // سرویس پس‌زمینه فقط معنای اندرویدی دارد
-  }
+  // v1.4.1 — صفحهٔ اطلاعات برنامه (مسیر مطمئن شیائومی/هوآوی: Battery → No restrictions)
+  const handleAppDetails = useCallback(async () => {
+    setBusy('battery');
+    try {
+      await openAppDetailsSettings();
+      flash('صفحهٔ برنامه در تنظیمات باز شد — Battery → No restrictions (شیائومی/هوآوی)');
+    } finally {
+      setBusy(null);
+    }
+  }, []);
+
+  // v1.4.1 — کارت روی وب هم دیده می‌شود (تنظیمات آستانه‌ها مشترک است)؛
+  // فقط دکمه‌های مخصوص سرویس پس‌زمینهٔ اندروید آنجا مخفی می‌شوند.
+  const isAndroid = Platform.OS === 'android';
 
   return (
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
         <BellRing size={18} color={colors.dark.accent} />
-        <Text style={styles.sectionTitle}>اعلان رشد قیمت</Text>
+        <Text style={styles.sectionTitle}>اعلان رشد و ریزش قیمت</Text>
       </View>
 
       <View style={styles.alertSwitchRow}>
@@ -423,6 +444,8 @@ function PriceAlertCard() {
             testID="price-alert-metal-threshold"
           />
 
+          {isAndroid && (
+          <>
           <View style={styles.alertBtnRow}>
             <Pressable style={({ pressed }) => [styles.alertBtn, pressed && { opacity: 0.85 }]} onPress={() => void handleTest()} testID="price-alert-test">
               <BellRing size={14} color={colors.dark.accent} />
@@ -460,9 +483,16 @@ function PriceAlertCard() {
             </Text>
           </Pressable>
           {!batteryOk && (
-            <Pressable onPress={() => void handleBatterySettings()} hitSlop={6}>
-              <Text style={styles.alertWhyLink}>اگر دکمهٔ بالا جواب نداد: تنظیمات باتری گوشی را باز کن</Text>
-            </Pressable>
+            <View style={styles.alertBtnRow}>
+              <Pressable style={({ pressed }) => [styles.alertBtn, pressed && { opacity: 0.85 }]} onPress={() => void handleBatterySettings()} testID="price-alert-battery-list">
+                <BatteryCharging size={14} color={colors.dark.accent} />
+                <Text style={styles.alertBtnText}>لیست بهینه‌سازی باتری</Text>
+              </Pressable>
+              <Pressable style={({ pressed }) => [styles.alertBtn, pressed && { opacity: 0.85 }]} onPress={() => void handleAppDetails()} testID="price-alert-app-details">
+                <Pin size={14} color={colors.dark.accent} />
+                <Text style={styles.alertBtnText}>تنظیمات برنامه (شیائومی/هوآوی)</Text>
+              </Pressable>
+            </View>
           )}
 
           <View style={styles.alertNoteBox}>
@@ -475,6 +505,19 @@ function PriceAlertCard() {
               Autostart را برای برنامه روشن و «Battery saver» را روی «No restrictions» بگذارید.
             </Text>
           </View>
+          </>
+          )}
+
+          {!isAndroid && (
+            <View style={styles.alertNoteBox}>
+              <Pin size={13} color={colors.dark.accent} />
+              <Text style={[styles.alertNoteText, { color: colors.dark.accent }]}>
+                نسخهٔ وب: آستانه‌ها و چشمک‌زن رشد/ریزش روی صفحه همین‌جا تنظیم می‌شود، اما
+                اعلان پس‌زمینهٔ گوشی (نوتیفیکیشن با برنامهٔ بسته) فقط در اپ اندروید کار می‌کند —
+                APK را از کارت «بروزرسانی برنامه» نصب کنید.
+              </Text>
+            </View>
+          )}
         </>
       )}
 
