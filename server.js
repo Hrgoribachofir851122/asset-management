@@ -767,113 +767,179 @@ async function handleBcFil(res, query) {
   return sendJson(res, 200, payload);
 }
 
-
-// ─── v1.3.6 — قیمت خرید/فروش طلای آب‌شده از سایت طلاین (taline.ir) ──────
-// GET /taline-gold → { ok, buy, sell, updatedAt, stale }
+// ─── v1.3.6 — طلاین (taline.ir): قیمت خرید/فروش هر گرم طلای آب‌شده ──────
 //
-// طلاین قیمت خرید/فروش هر گرم طلای آب‌شده را با shortcode سرور-ساید داخل
-// HTML صفحه می‌گذارد (LiteSpeed ESI). بعضی بازدیدها به‌جای عدد «—» می‌گیرند
-// (بکتِ کش کهنه)، پس زنجیرهٔ خوانش:
-//   1) دسکتاپ-UA → پارس مقدار ESI کنار برچسب‌های «قیمت خرید/فروش هر گرم»
-//   2) موبایل-UA + کش‌شکن (باکت کش متفاوت لایت‌اسپید)
-//   3) هر دو خالی → آخرین جواب سالم (تا ۲۴ ساعت) با stale:true
-// جواب سالم ۶۰ ثانیه کش می‌شود تا اپ هر چند دقیقه بدون فشار بیاید.
-const talineCache = new Map(); // 'last-good' → { at, payload }
-const TALINE_TTL = 60_000; // کش جواب سالم
-const TALINE_STALE_TTL = 24 * 3_600_000; // نگه‌داشتن آخرین قیمت معتبر
+// چرا این اندپوینت بازنویسی شد؟ نسخهٔ قبلی فقط HTML صفحهٔ اصلی taline.ir را
+// می‌خواند؛ ولی آن صفحه قیمت خرید/فروش را در یک بلوک کش LiteSpeed-ESI رندر
+// می‌کند که خیلی وقت‌ها محتوایش «—» است (کشِ خالی) → پارسر هیچ عددی پیدا
+// نمی‌کرد → «taline-empty» → اپ پیام «قیمت طلایین در دسترس نیست» نشان می‌داد.
+//
+// زنجیرهٔ جدید (مقاوم):
+//   ۱) کانال تلگرام رسمی طلاین @TalinePrice (پیش‌نمایش عمومی t.me/s/) —
+//      همان نرخ لحظه‌ای سایت («گرم ۱۸ عیار: خرید/فروش») که هر ۲ تا ۵ دقیقه
+//      پست می‌شود؛ از هر IP‌ای بدون بلاک خوانده می‌شود.
+//   ۲) صفحهٔ taline.ir — وقتی بلوک ESI تازه با عدد واقعی کش شده باشد.
+//   ۳) کشِ روی دیسک (/tmp) — آخرین نرخِ معتبر با stale:true برمی‌گردد
+//      تا اپ به‌جای «در دسترس نیست» آخرین قیمت واقعی را نشان دهد.
+//
+const TALINE_TG_URL = 'https://t.me/s/TalinePrice';
+const TALINE_SITE_URL = 'https://taline.ir/';
+const TALINE_DISK_CACHE = '/tmp/taline-gold-cache.json';
 
-function talineNormalizeNum(raw) {
-  if (!raw) return NaN;
-  let s = String(raw);
-  const fa = '۰۱۲۳۴۵۶۷۸۹';
-  const ar = '٠١٢٣٤٥٦٧٨٩';
-  for (let i = 0; i < 10; i++) {
-    s = s.split(fa[i]).join(String(i));
-    s = s.split(ar[i]).join(String(i));
-  }
-  s = s.replace(/[,،٬\s]/g, '');
-  // «—» یا هر متن دیگر → نامعتبر
-  if (!/^\d+(\.\d+)?$/.test(s)) return NaN;
-  const n = parseFloat(s);
-  // محدودهٔ منطقی برای قیمت گرم طلا به تومان
-  if (!Number.isFinite(n) || n < 100_000 || n > 1e12) return NaN;
-  return n;
+/** هر گرم طلای آب‌شده امروز بین ۵ و ۲۰۰ میلیون تومان منطقی است (رنج ۱۰ ساله). */
+function talinePlausible(n) {
+  return Number.isFinite(n) && n >= 5_000_000 && n <= 200_000_000;
 }
 
-function talineExtractAfter(html, label) {
-  const i = html.indexOf(label);
-  if (i < 0) return NaN;
-  const seg = html.slice(i, i + 2500);
-  // اولین مقدار ESI بعد از برچسب: <!-- lscwp esi-shortcode -->VALUE<!-- …
-  const m = seg.match(/esi-shortcode\s*-->([^<]{0,80})</);
-  return m ? talineNormalizeNum(m[1]) : NaN;
-}
-
-async function talineFetchOnce(url, ua) {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 20_000);
-  try {
-    const r = await fetch(url, {
-      signal: ctrl.signal,
-      headers: {
-        'User-Agent': ua,
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'fa-IR,fa;q=0.9,en;q=0.6',
-        Referer: 'https://taline.ir/',
-      },
-    });
-    if (!r.ok) throw new Error(`taline HTTP ${r.status}`);
-    return await r.text();
-  } finally {
-    clearTimeout(timer);
-  }
+/** متن پیام تلگرام را به عدد تومانی تبدیل می‌کند (۲۵,۹۰۰,۶۹۹ → 25900699). */
+function talineParseNumber(raw) {
+  const clean = persianToEnglish(String(raw)).replace(/[,،\s]/g, '');
+  if (!/^\d{5,12}$/.test(clean)) return NaN;
+  return parseFloat(clean);
 }
 
 /**
- * زنجیرهٔ خوانش صفحهٔ طلاین: مستقیم (دسکتاپ → موبایل + کش‌شکن) و بعد دو
- * رلهٔ عمومی برای وقتی IP سرور موقتاً توسط لایت‌اسپید/کلودفلر پرچم شود.
- * هر کدام که عدد خرید و فروش معتبر برگرداند برنده است.
+ * کانال تلگرام طلاین: آخرین پیامِ «نرخ لحظه‌ای طلاین» را می‌خواند.
+ * قالب پست‌ها:
+ *   💰 گرم ۱۸ عیار
+ *   🔸 خرید: ۲۵,۹۰۰,۶۹۹
+ *   🔹 فروش: ۲۵,۶۹۴,۲۹۵
+ * گرمِ ۱۸ عیارِ طلاین = همان «قیمت خرید/فروش هر گرم طلای آب‌شده» سایت است
+ * (عددِ مثقالِ «مظنه آب‌شده» ~۱۱۲هزار است و با رنج اعتبارسنجی رد می‌شود).
  */
-async function talineFetchHtml() {
-  const desktop = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36';
-  const mobile = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Mobile Safari/537.36';
-  const attempts = [
-    () => talineFetchOnce('https://taline.ir/', desktop),
-    () => talineFetchOnce(`https://taline.ir/?t=${Date.now()}`, mobile),
-    () => talineFetchOnce(`https://corsproxy.io/?url=${encodeURIComponent('https://taline.ir/')}`, desktop),
-    () => talineFetchOnce(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent('https://taline.ir/')}`, desktop),
-  ];
-  let lastErr;
-  for (const attempt of attempts) {
-    try {
-      return await attempt();
-    } catch (e) {
-      lastErr = e;
-    }
+function parseTalineTelegram(html) {
+  const texts = [...html.matchAll(/class="tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)<\/div>/g)];
+  let best = null;
+  for (const m of texts) {
+    const raw = m[1];
+    // برچسب گرم ۱۸ عیار (ارقام فارسی یا لاتین) لازم است
+    const norm = persianToEnglish(raw.replace(/<[^>]+>/g, ' '));
+    if (!/گرم\s*18\s*عیار/.test(norm)) continue;
+    const buyMatch = /خرید\s*[:؛]\s*([۰-۹0-9][۰-۹0-9,،\.]{5,15})/.exec(norm);
+    const sellMatch = /فروش\s*[:؛]\s*([۰-۹0-9][۰-۹0-9,،\.]{5,15})/.exec(norm);
+    if (!buyMatch || !sellMatch) continue;
+    const buy = talineParseNumber(buyMatch[1]);
+    const sell = talineParseNumber(sellMatch[1]);
+    if (!talinePlausible(buy) || !talinePlausible(sell)) continue;
+    if (sell / buy < 0.9 || sell / buy > 1.1) continue; // نسبت غیرمنطقی = پارس غلط
+    // زمان پست: تگ <time datetime="..."> در ادامهٔ همان پیام
+    const tail = html.slice(m.index, m.index + 4000);
+    const t = /datetime="([^"]+)"/.exec(tail);
+    best = { buy, sell, postTimeIso: t ? t[1] : null, source: 'telegram:@TalinePrice' };
+    // ادامهٔ حلقه: آخرین (جدیدترین) پیام معتبر برنده است
   }
-  throw lastErr instanceof Error ? lastErr : new Error('taline-unreachable');
+  return best;
+}
+
+/**
+ * سایت taline.ir: عدد بعد از «قیمت خرید هر گرم» / «قیمت فروش هر گرم».
+ * وقتی بلوک ESI عدد واقعی داشته باشد کار می‌کند؛ با «—» null برمی‌گردد.
+ */
+function parseTalineSite(html) {
+  const grab = (label) => {
+    const idx = html.indexOf(label);
+    if (idx < 0) return NaN;
+    const seg = persianToEnglish(html.slice(idx, idx + 800).replace(/<[^>]+>/g, ' '));
+    const num = /([0-9]{1,3}(?:[,،][0-9]{3})+|[0-9]{7,12})/.exec(seg);
+    if (!num) return NaN;
+    return talineParseNumber(num[1]);
+  };
+  const buy = grab('قیمت خرید هر گرم');
+  const sell = grab('قیمت فروش هر گرم');
+  if (!talinePlausible(buy) || !talinePlausible(sell)) return null;
+  if (sell / buy < 0.9 || sell / buy > 1.1) return null;
+  return { buy, sell, source: 'taline.ir' };
+}
+
+function talineReadDiskCache() {
+  try {
+    return JSON.parse(fs.readFileSync(TALINE_DISK_CACHE, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function talineWriteDiskCache(data) {
+  try {
+    fs.writeFileSync(TALINE_DISK_CACHE, JSON.stringify(data), 'utf8');
+  } catch {}
+}
+
+async function talineFetchLive() {
+  // لایهٔ ۱ — کانال تلگرام (مطمئن‌ترین منبع؛ نرخ لحظه‌ای خود طلاین)
+  try {
+    const r = await fetchWithTimeout(TALINE_TG_URL, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        'Accept-Language': 'fa-IR,fa;q=0.9,en;q=0.8',
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
+    }, 12000);
+    if (r.ok) {
+      const parsed = parseTalineTelegram(await r.text());
+      if (parsed) return parsed;
+    }
+  } catch {}
+  // لایهٔ ۱-ب — v1.3.9: آینه‌های عمومی کانال. اگر تلگرام IP خود ریلوی را
+  // محدود کرده باشد، این دو از آی‌پی خودشان کانال را می‌خوانند.
+  const tgEncoded = encodeURIComponent(TALINE_TG_URL);
+  const mirrors = [
+    `https://api.allorigins.win/raw?url=${tgEncoded}`,
+    `https://api.codetabs.com/v1/proxy?quest=${tgEncoded}`,
+  ];
+  for (const mirrorUrl of mirrors) {
+    try {
+      const r = await fetchWithTimeout(mirrorUrl, {
+        headers: { Accept: '*/*' },
+      }, 12000);
+      if (r.ok) {
+        const parsed = parseTalineTelegram(await r.text());
+        if (parsed) {
+          parsed.source += ' (آینه)';
+          return parsed;
+        }
+      }
+    } catch {}
+  }
+  // لایهٔ ۲ — صفحهٔ taline.ir (وقتی کش ESI عدد واقعی دارد)
+  try {
+    const r = await fetchWithTimeout(TALINE_SITE_URL, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        'Accept-Language': 'fa-IR,fa;q=0.9',
+        Accept: 'text/html,application/xhtml+xml',
+      },
+    }, 12000);
+    if (r.ok) {
+      const parsed = parseTalineSite(await r.text());
+      if (parsed) return parsed;
+    }
+  } catch {}
+  return null;
 }
 
 async function handleTalineGold(res) {
-  const hit = talineCache.get('last-good');
-  if (hit && Date.now() - hit.at < TALINE_TTL) return sendJson(res, 200, hit.payload);
-  try {
-    const html = await talineFetchHtml();
-    const buy = talineExtractAfter(html, 'قیمت خرید هر گرم');
-    const sell = talineExtractAfter(html, 'قیمت فروش هر گرم');
-    if (!(buy > 0 && sell > 0)) throw new Error('taline-empty');
-    // کنترل عقلانی: خرید و فروش باید نزدیک هم باشند
-    if (Math.max(buy, sell) / Math.min(buy, sell) > 1.3) throw new Error('taline-inconsistent');
-    const payload = { ok: true, buy, sell, updatedAt: Date.now(), stale: false };
-    talineCache.set('last-good', { at: Date.now(), payload });
+  const hit = getCached('taline-gold');
+  if (hit) return sendJson(res, 200, hit);
+
+  const live = await talineFetchLive();
+  if (live) {
+    const payload = { ok: true, ...live, unit: 'تومان', stale: false, ts: Date.now() };
+    talineWriteDiskCache(payload);
+    setCached('taline-gold', payload);
     return sendJson(res, 200, payload);
-  } catch (e) {
-    if (hit && Date.now() - hit.at < TALINE_STALE_TTL) {
-      return sendJson(res, 200, { ...hit.payload, stale: true, error: e.message });
-    }
-    return sendJson(res, 200, { ok: false, error: e.message, ts: Date.now() });
   }
+
+  // هر دو منبع شکست خورد → آخرین نرخ معتبر (حتی چند ساعته) به‌جای خطا.
+  const stale = talineReadDiskCache();
+  if (stale && stale.ok) {
+    const payload = { ...stale, stale: true, ts: Date.now() };
+    setCached('taline-gold', payload);
+    return sendJson(res, 200, payload);
+  }
+  return sendJson(res, 200, { ok: false, error: 'taline-unavailable', ts: Date.now() });
 }
+
 
 const server = http.createServer(async (req, res) => {
   const urlPath = (req.url || '/').split('?')[0].split('#')[0];
@@ -901,7 +967,7 @@ const server = http.createServer(async (req, res) => {
   // v1.3.0 — پروکسی خواندن بلاکچین (تون / فایل‌کوین)
   if (urlPath === '/bc/ton') return handleBcTon(res, new URL(req.url, 'http://x').searchParams);
   if (urlPath === '/bc/filecoin') return handleBcFil(res, new URL(req.url, 'http://x').searchParams);
-  // v1.3.6 — قیمت خرید/فروش طلای آب‌شده از طلاین (بخش دارایی ریالی)
+  // v1.3.6 — قیمت خرید/فروش هر گرم طلای آب‌شده از طلاین (تلگرام + سایت + کش)
   if (urlPath === '/taline-gold') return handleTalineGold(res);
 
   if (urlPath === '/health' || urlPath === '/api/health') {
@@ -922,6 +988,11 @@ const server = http.createServer(async (req, res) => {
 server.keepAliveTimeout = 65_000; // جلوگیری از قطع‌های 502 در پشت پروکسی Railway
 server.headersTimeout = 66_000;
 
-server.listen(PORT, () => {
-  console.log(`Asset-Management server (web + price proxy) listening on port ${PORT}`);
-});
+if (require.main === module) {
+  server.listen(PORT, () => {
+    console.log(`Asset-Management server (web + price proxy) listening on port ${PORT}`);
+  });
+}
+
+// برای تست‌های محلی: پارسرهای طلاین بدون بالا آوردن سرور قابل ایمپورت‌اند
+module.exports = { parseTalineTelegram, parseTalineSite };

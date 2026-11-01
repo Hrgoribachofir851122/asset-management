@@ -25,6 +25,8 @@ import { AppProvider, useApp } from '@/contexts/AppContext';
 import { ThemedAlertHost } from '@/components/ThemedAlert';
 // v1.2.0 — بنر بروزرسانی (بالای همهٔ صفحات وقتی Release جدیدی روی گیتهاب باشد)
 import UpdateBanner from '@/components/UpdateBanner';
+// v1.3.9 — مودال «تازه‌های نسخه» (فقط اولین ورود بعد از نصب/آپدیت)
+import WhatsNewModal from '@/components/WhatsNewModal';
 import { syncPriceAlertConfig } from '@/utils/priceAlertApi';
 
 const queryClient = new QueryClient({
@@ -116,6 +118,8 @@ export default function RootLayout() {
         <QueryClientProvider client={queryClient}>
           <AppProvider>
             <RootNavigator />
+            {/* v1.3.9 — بالای همهٔ صفحات؛ فقط برای نسخهٔ جدید، یک بار */}
+            <WhatsNewModal />
           </AppProvider>
         </QueryClientProvider>
       </SafeAreaProvider>

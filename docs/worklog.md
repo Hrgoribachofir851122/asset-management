@@ -4,6 +4,37 @@
 
 ---
 
+## 2026-11-01 — نسخه 1.3.9 (versionCode 13) — «رفع باگ لوکال فارسی + وبِ طلاین + اسکن بی‌صدا»
+
+**درخواست کاربر:** ① وب هنوز «قیمت طلایین موقتاً در دسترس نیست» می‌دهد ② اسکن ۳ ثانیه‌ای IP
+در بکگراند و بدون اینکه کاربر بفهمد تنظیمات رفرش می‌شود + رفرش دستی بماند ③ منوهای کشویی
+اعلان رشد قیمت: رنگ بکگراند متناسب + معلوم باشد هر نوار مال چه اعلانی است (با عکس) ④ بعد از
+نصب هر نسخه، فقط بار اول یک مودال هم‌تم تغییرات را نشان بدهد و با بستن، دیگر نیاید.
+
+**یافته‌ها:**
+- عکس کاربر یک باگ بحرانی را لو داد: «fetch error: length=10; index=1730» — DecimalFormat
+  با لوکال فارسی گوشی، رقم فارسی تولید می‌کرد و FA_DIGITS[c-'0'] ایندکس ۱۷۳۰ از آرایهٔ ۱۰تایی
+  می‌گرفت → متن اعلان می‌شکست → **اعلان روی گوشی کاربر هرگز ارسال نمی‌شد**. رفع: Locale.US
+  + نگاشت فقط ASCII (toFaStr با '0'..'9').
+- آدرس واقعی ریلوی: asset-management1.up.railway.app (از scanServerApi.ts). سرور بالاست ولی
+  /taline-gold → {"ok":false,"error":"taline-empty"} → server.js قدیمی روی ریلوی است؛ zips قبلی
+  server.js را نداشتند. t.me از IP دیتاسنتر جواب می‌دهد (کاشی ۱۳۳KB با ۲۰ «گرم»).
+- server.js: لایهٔ آینهٔ allorigins/codetabs بعد از تلگرام مستقیم اضافه شد؛ تست محلی (PORT=3977):
+  {"ok":true,"buy":25546089,...,"source":"telegram:@TalinePrice"} ✓ این بار در changed-zip هست.
+- talineApi.ts وب: سرور اول (same-origin)، بعد آینه‌ها، بعد سایت.
+
+**بقیه:** IpStatusCard — چک auto بدون setChecking (اسپینر فقط manual)، مقایسه state قبل از
+setInfo، خط IP/کشور همیشه رندر (بدون پرش ارتفاع)، AppState gate برای توقف پول در بکگراند.
+DropdownPicker — propهای showLabelOnBar + triggerBackgroundColor؛ دو منوی آستانه با برچسب روی نوار
+(«🔔 کوین‌ها…» / «🥇 طلا و دلار…») و بکگراند colors.dark.background.
+WhatsNewModal + constants/whatsNew.ts — کلید @whats_new_seen_version؛ نسخه‌های جدیدتر از آخرین
+دیده‌شده یکجا نشان داده می‌شوند؛ بستن → ذخیره نسخه فعلی. با تأخیر ۲.۵ثانیه بعد از لانچ.
+
+**بیلد:** دوباره OOM — این بار در lintVitalAnalyzeRelease + یک KotlinCompileDaemon تازه و یک
+node server.js سرگردانِ تست. راه‌حل ماندگار در ریپو: lint { checkReleaseBuilds=false } +
+kotlin.compiler.execution.strategy=in-process. بیلد سبز: ۱۱.۸۷MB، versionCode 13.
+
+
 ---
 
 ## 2026-11-01 — نسخه 1.3.8 (versionCode 12) — «اعلان رشد قیمت + نسخهٔ وب طلاین»

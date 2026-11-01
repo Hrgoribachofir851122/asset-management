@@ -15,6 +15,14 @@ interface DropdownPickerProps {
   options: DropdownOption[];
   onSelect: (key: string) => void;
   testID?: string;
+  /**
+   * v1.3.9 — برچسب روی خودِ نوار بسته هم دیده شود (نه فقط داخل مودال باز).
+   * نوار بسته به‌جای یک عدد خالی، «برچسب: مقدار» نشان می‌دهد تا معلوم باشد
+   * هر نوار مال کدام تنظیم است.
+   */
+  showLabelOnBar?: boolean;
+  /** v1.3.9 — رنگ پس‌زمینهٔ نوار بسته؛ پیش‌فرض inputBg (مثل قبل) */
+  triggerBackgroundColor?: string;
 }
 
 export default function DropdownPicker({
@@ -23,6 +31,8 @@ export default function DropdownPicker({
   options,
   onSelect,
   testID,
+  showLabelOnBar = false,
+  triggerBackgroundColor,
 }: DropdownPickerProps) {
   const [open, setOpen] = useState(false);
   const selectedLabel = options.find((o) => o.key === value)?.label ?? value;
@@ -30,10 +40,19 @@ export default function DropdownPicker({
   return (
     <>
       <Pressable
-        style={styles.dropdownTrigger}
+        style={[
+          styles.dropdownTrigger,
+          showLabelOnBar && styles.dropdownTriggerRtl,
+          triggerBackgroundColor ? { backgroundColor: triggerBackgroundColor } : null,
+        ]}
         onPress={() => setOpen(true)}
         testID={testID}
       >
+        {showLabelOnBar && (
+          <Text style={styles.dropdownBarLabel} numberOfLines={1}>
+            {label}
+          </Text>
+        )}
         <Text style={styles.dropdownTriggerText}>{selectedLabel}</Text>
         <ChevronDown size={16} color={colors.dark.textSecondary} />
       </Pressable>
@@ -90,6 +109,18 @@ const styles = createThemedStyles(() => StyleSheet.create({
     color: colors.dark.text,
     flex: 1,
     textAlign: 'right',
+  },
+  // v1.3.9 — برچسبِ روی نوار بسته (وقتی showLabelOnBar فعال باشد)
+  dropdownTriggerRtl: {
+    // راست‌به‌چپ: [برچسب][مقدار][فلش] — کاربر اول برچسب را می‌خواند
+    flexDirection: 'row-reverse',
+  },
+  dropdownBarLabel: {
+    fontSize: 12,
+    color: colors.dark.textMuted,
+    textAlign: 'right',
+    marginLeft: 8,
+    flexShrink: 1,
   },
   modalOverlay: {
     flex: 1,

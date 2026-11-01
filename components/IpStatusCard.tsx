@@ -20,7 +20,7 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, ActivityIndicator } from 'react-native';
+import { AppState, View, Text, StyleSheet, Pressable, ActivityIndicator } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ShieldCheck, ShieldAlert, RefreshCw, HelpCircle } from 'lucide-react-native';
 import colors from '@/constants/colors';
@@ -65,13 +65,25 @@ export default function IpStatusCard() {
   const [hasTargets, setHasTargets] = useState(false);
   const mountedRef = useRef(true);
 
-  const check = useCallback(async (force = true) => {
-    setChecking(true);
+  /**
+   * v1.3.9 — چکِ بی‌صدا در پس‌زمینه: اسکنِ هر ۳ ثانیه هیچ اسپینری نشان
+   * نمی‌دهد و UI را تکون نمی‌دهد؛ نتیجه فقط وقتی جابه‌جا می‌شود که IP/وضعیت
+   * واقعاً عوض شده باشد. اسپینر فقط برای رفرش دستی کاربر است.
+   */
+  const check = useCallback(async (force = true, manual = false) => {
+    if (manual) setChecking(true);
     try {
       const res = await getIpInfo(force);
-      if (mountedRef.current) setInfo(res);
+      if (!mountedRef.current) return;
+      setInfo((prev) => {
+        // بدون تغییر واقعی → همان state قبلی (ری‌رندر بی‌دلیل ممنوع)
+        if (prev && res && prev.ip === res.ip && prev.status === res.status && prev.country === res.country) {
+          return prev;
+        }
+        return res;
+      });
     } finally {
-      if (mountedRef.current) setChecking(false);
+      if (mountedRef.current && manual) setChecking(false);
     }
   }, []);
 
@@ -82,15 +94,36 @@ export default function IpStatusCard() {
     void detectHasTargets().then((t) => {
       if (mountedRef.current) setHasTargets(t);
     });
-    const timer = setInterval(() => {
-      void check(true);
-      void detectHasTargets().then((t) => {
-        if (mountedRef.current) setHasTargets(t);
-      });
-    }, POLL_MS);
+    // v1.3.9 — اسکن خودکار فقط وقتی برنامه فعال است؛ در پس‌زمینه متوقف می‌شود
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+    const startPolling = () => {
+      if (pollTimer) return;
+      pollTimer = setInterval(() => {
+        void check(true);
+        void detectHasTargets().then((t) => {
+          if (mountedRef.current) setHasTargets(t);
+        });
+      }, POLL_MS);
+    };
+    const stopPolling = () => {
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+    };
+    startPolling();
+    const appStateSub = AppState.addEventListener('change', (s) => {
+      if (s === 'active') {
+        void check(true);
+        startPolling();
+      } else {
+        stopPolling();
+      }
+    });
     return () => {
       mountedRef.current = false;
-      clearInterval(timer);
+      stopPolling();
+      appStateSub.remove();
     };
   }, [check]);
 
@@ -117,7 +150,7 @@ export default function IpStatusCard() {
         <Text style={styles.title}>بررسی IP و فیلترشکن</Text>
         <Pressable
           style={styles.refreshBtn}
-          onPress={() => void check(true)}
+          onPress={() => void check(true, true)}
           disabled={checking}
           hitSlop={8}
           testID="ip-status-refresh"
@@ -160,12 +193,12 @@ export default function IpStatusCard() {
         </Text>
       </View>
 
-      {!unknown && (
-        <Text style={styles.metaText}>
-          IP: {info?.ip ?? '—'} • کشور: {countryLabel}
-          {info?.country ? ` (${info.country})` : ''}
-        </Text>
-      )}
+      {/* v1.3.9 — خط IP/کشور همیشه رندر می‌شود (با «—» تا رسیدن نتیجه) تا
+          ارتفاع کارت با آمدن نتیجهٔ اسکن عوض نشود و بخش تنظیمات تکون نخورد */}
+      <Text style={styles.metaText}>
+        IP: {info?.ip ?? '—'} • کشور: {unknown ? '—' : countryLabel}
+        {info?.country ? ` (${info.country})` : ''}
+      </Text>
 
       {sanctioned && (
         <View style={styles.warnBox}>

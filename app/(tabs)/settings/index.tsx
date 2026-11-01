@@ -411,18 +411,24 @@ export default function SettingsScreen() {
 
         {alertSettings.enabled && (
           <>
+            {/* v1.3.9 — برچسب روی خودِ نوار بسته + پس‌زمینهٔ هم‌خانوادهٔ تم؛
+                معلوم است هر نوار مال کدام اعلان است */}
             <DropdownPicker
-              label="آستانهٔ رشد کوین‌ها (۲۴ ساعت)"
+              label="🔔 کوین‌ها (کیف پول و صرافی — ۲۴ ساعت):"
               value={String(alertSettings.coinPct)}
               options={COIN_THRESHOLD_OPTIONS}
               onSelect={(key) => handleThreshold({ coinPct: Number(key) })}
+              showLabelOnBar
+              triggerBackgroundColor={colors.dark.background}
               testID="price-alert-coin-threshold"
             />
             <DropdownPicker
-              label="آستانهٔ رشد طلا و دلار (روزانه)"
+              label="🥇 طلا و دلار (روزانه):"
               value={String(alertSettings.metalPct)}
               options={METAL_THRESHOLD_OPTIONS}
               onSelect={(key) => handleThreshold({ metalPct: Number(key) })}
+              showLabelOnBar
+              triggerBackgroundColor={colors.dark.background}
               testID="price-alert-metal-threshold"
             />
 

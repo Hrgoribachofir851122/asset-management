@@ -63,26 +63,33 @@ class PriceAlertWorker(context: Context, params: WorkerParameters) : Worker(cont
 
         val FA_DIGITS = arrayOf("۰", "۱", "۲", "۳", "۴", "۵", "۶", "۷", "۸", "۹")
 
+        /**
+         * v1.3.9 — باگ گوشی‌های با لوکال فارسی: DecimalFormat بدون Locale.US
+         * رقم‌های فارسی تولید می‌کرد و «c - '0'» ایندکس ~۱۷۳۰ از آرایهٔ ۱۰تایی
+         * می‌گرفت (خطای «length=10; index=1730» در آخرین خطا) → ساخت متن اعلان
+         * می‌شکست و نوتیفیکیشن هرگز فرستاده نمی‌شد. حالا: فرمت همیشه انگلیسی
+         * (Locale.US) + نگاشت رقم فقط برای ASCII 0-9؛ هر کاراکتر دیگر سر جایش.
+         */
+        fun toFaStr(s: String): String {
+            val sb = StringBuilder(s.length)
+            for (c in s) {
+                if (c in '0'..'9') sb.append(FA_DIGITS[c - '0'])
+                else if (c == '.') sb.append('٫')
+                else sb.append(c)
+            }
+            return sb.toString()
+        }
+
         /** 12.34 → «۱۲٫۳۴» (برای متن نوتیفیکیشن فارسی) */
         fun toFa(n: Double): String {
             val s = if (n == n.toLong().toDouble()) String.format(java.util.Locale.US, "%.0f", n) else String.format(java.util.Locale.US, "%.1f", n)
             return toFaStr(s)
         }
 
-        /** رشتهٔ رقم‌دار انگلیسی → فارسی (برای قالب‌های آماده مثل %.2f) */
-        fun toFaStr(s: String): String {
-            val sb = StringBuilder()
-            for (c in s) when {
-                c.isDigit() -> sb.append(FA_DIGITS[c - '0'])
-                c == '.' -> sb.append('٫')
-                else -> sb.append(c)
-            }
-            return sb.toString()
-        }
-
         fun toFaGrouped(n: Long): String {
-            val grouped = java.text.DecimalFormat("#,###").format(n)
-            return grouped.map { if (it.isDigit()) FA_DIGITS[it - '0'] else it }.joinToString("")
+            val symbols = java.text.DecimalFormatSymbols(java.util.Locale.US)
+            val grouped = java.text.DecimalFormat("#,###", symbols).format(n)
+            return toFaStr(grouped.replace(',', '٬'))
         }
 
         /** نوتیفیکیشن با کانال و آیکون و کلیک→بازکردن برنامه؛ هم کارگر هم ماژول تست. */

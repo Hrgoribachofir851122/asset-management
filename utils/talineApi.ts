@@ -228,10 +228,16 @@ async function fetchLiveParallel(): Promise<TalineGold | null> {
   })();
 
   const mirrorLayers = [layerAllorigins(), layerAlloriginsGet(), layerCodetabs, layerCorsproxy];
+  /**
+   * v1.3.9 — وب: سرور اول. سایتِ روی ریلوی /taline-gold را از همان دامنه
+   * می‌گیرد (same-origin، بدون CORS؛ سرور با زنجیرهٔ تلگرام+آینه+کش دیسک).
+   * آینه‌های مرورگری فقط پشتیبانِ همان‌اند. تست همان روز: سرور محلی
+   * با زنجیرهٔ جدید «ok:true» و نرخ زندهٔ کانال داد.
+   */
   const results = isWeb
-    ? await Promise.allSettled([...mirrorLayers, layerServer, layerSite, layerDirectTg()])
-    : await Promise.allSettled([layerDirectTg(), ...mirrorLayers, layerServer, layerSite]);
-  // اولویت: (موبایل: کانال مستقیم →) آینه‌ها → سرور → سایت
+    ? await Promise.allSettled([layerServer, ...mirrorLayers, layerSite])
+    : await Promise.allSettled([layerDirectTg(), layerServer, ...mirrorLayers, layerSite]);
+  // اولویت: (موبایل: کانال مستقیم →) سرور → آینه‌ها → سایت
   for (const r of results) {
     if (r.status === 'fulfilled' && r.value) return r.value;
   }
