@@ -1,9 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 import { getServerUrl } from '@/utils/scanServerApi';
 import { persianToEnglishDigits } from '@/utils/iranMarketApi';
 
 /**
- * talineApi.ts — v1.3.7
+ * talineApi.ts — v1.3.8
  *
  * «قیمت خرید و فروش هر گرم طلای آب‌شده از سایت طلاین» — the LIVE rate of
  * taline.ir, shown in the دارایی ریالی section under the TGJU price grid.
@@ -150,19 +151,47 @@ function parseSitePage(html: string): TalineGold | null {
   return { buy, sell, updatedAt: Date.now(), source: 'taline.ir' };
 }
 
-/** لایه‌های زنده — همهٔ آینه‌های تلگرام + سایت + سرور، به‌صورت موازی. */
+/**
+ * v1.3.8 — نسخهٔ وب: مرتب‌سازی لایه‌ها برای مرورگر.
+ *   در مرورگر، fetch مستقیم به t.me همیشه با خطای CORS می‌میرد، پس آینه‌های
+ *   CORS-دار اول می‌آیند (allorigins با تازگی‌شکن برای رد شدن از کشِ کوتاهش،
+ *   بعد codetabs) و کانال مستقیم حذف می‌شود. تست واقعی همین امروز:
+ *   allorigins/raw از مرورگر با Origin سایت ما جواب 200 + زوج قیمت می‌داد.
+ */
 async function fetchLiveParallel(): Promise<TalineGold | null> {
   const tgEncoded = encodeURIComponent(TALINE_TG_URL);
+  const isWeb = Platform.OS === 'web';
 
-  const layerDirectTg = (async () => {
+  const layerDirectTg = async (): Promise<TalineGold | null> => {
+    if (isWeb) return null; // مرورگر: CORS اجازهٔ خواندن t.me نمی‌دهد
     const html = await fetchWithTimeout(TALINE_TG_URL, BROWSER_HEADERS);
     return html ? parseTelegramPage(html) : null;
-  })();
+  };
 
-  const layerAllorigins = (async () => {
-    const html = await fetchWithTimeout(`https://api.allorigins.win/raw?url=${tgEncoded}`, BROWSER_HEADERS);
+  const layerAllorigins = async (): Promise<TalineGold | null> => {
+    // &cb= — کشِ چندثانیه‌ای خود allorigins را دور می‌زند (کد هر بار متفاوت)
+    const cb = Date.now().toString(36);
+    const html = await fetchWithTimeout(
+      `https://api.allorigins.win/raw?url=${tgEncoded}&cb=${cb}`,
+      BROWSER_HEADERS,
+    );
     return html ? parseTelegramPage(html) : null;
-  })();
+  };
+
+  // واریانت JSON همان سرویس (استخر جداگانهٔ نرخ‌محدودیتش):
+  const layerAlloriginsGet = async (): Promise<TalineGold | null> => {
+    const body = await fetchWithTimeout(
+      `https://api.allorigins.win/get?url=${tgEncoded}&cb=${Date.now().toString(36)}`,
+      { ...BROWSER_HEADERS, Accept: 'application/json' },
+    );
+    if (!body) return null;
+    try {
+      const contents = (JSON.parse(body) as { contents?: string }).contents ?? '';
+      return contents ? parseTelegramPage(contents) : null;
+    } catch {
+      return null;
+    }
+  };
 
   const layerCodetabs = (async () => {
     const html = await fetchWithTimeout(`https://api.codetabs.com/v1/proxy?quest=${tgEncoded}`, BROWSER_HEADERS);
@@ -198,8 +227,11 @@ async function fetchLiveParallel(): Promise<TalineGold | null> {
     return html ? parseSitePage(html) : null;
   })();
 
-  const results = await Promise.allSettled([layerDirectTg, layerAllorigins, layerCodetabs, layerCorsproxy, layerServer, layerSite]);
-  // اولویت: کانال مستقیم → آینه‌ها → سرور → سایت
+  const mirrorLayers = [layerAllorigins(), layerAlloriginsGet(), layerCodetabs, layerCorsproxy];
+  const results = isWeb
+    ? await Promise.allSettled([...mirrorLayers, layerServer, layerSite, layerDirectTg()])
+    : await Promise.allSettled([layerDirectTg(), ...mirrorLayers, layerServer, layerSite]);
+  // اولویت: (موبایل: کانال مستقیم →) آینه‌ها → سرور → سایت
   for (const r of results) {
     if (r.status === 'fulfilled' && r.value) return r.value;
   }

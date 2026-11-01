@@ -58,6 +58,7 @@ import {
   fetchBitperpPositionHistory,
 } from '@/utils/bitperpApi';
 import { fetchForeignExchangeBalance } from '@/utils/foreignExchangeBalances';
+import { syncPriceAlertConfig } from '@/utils/priceAlertApi';
 import { fetchForeignPeriodPnl } from '@/utils/foreignExchangePnl';
 import { exchangeNow, markClockStale } from '@/utils/exchangeClock';
 import LocalAssetsSection from '@/components/LocalAssetsSection';
@@ -2501,6 +2502,16 @@ export default function WalletScreen() {
       cancelled = true;
     };
   }, [bcWalletsKey]);
+
+  // v1.3.8 — هر بار که موجودی‌ها تازه می‌شوند، لیست ارزهای «تحت نظر» سرویس
+  // اعلان رشد قیمت هم به‌روز می‌شود (کوین جدید → از همان دورهٔ بعدی زیر نظر)
+  useEffect(() => {
+    if (!bcCachesLoaded) return;
+    const timer = setTimeout(() => {
+      syncPriceAlertConfig().catch(() => {});
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [bcCachesLoaded, bcWalletsKey, walletsQuery.dataUpdatedAt]);
 
   const bcBalanceQueries = useQueries({
     queries: bcCachesLoaded

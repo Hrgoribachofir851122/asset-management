@@ -10,7 +10,7 @@
  *     کیف پول بلاکچین + بخش کامل «IP و فیلترشکن» (ایران / فیلترشکن روشن)
  */
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -20,6 +20,7 @@ import {
   Image,
   Linking,
   ActivityIndicator,
+  Switch,
 } from 'react-native';
 import {
   ChevronDown,
@@ -34,6 +35,10 @@ import {
   CheckCircle2,
   XCircle,
   Github,
+  Bell,
+  BellRing,
+  BatteryCharging,
+  Zap,
 } from 'lucide-react-native';
 import colors from '@/constants/colors';
 import { createThemedStyles } from '@/utils/themeStyles';
@@ -46,6 +51,19 @@ import {
   notifyUpdateAvailable,
   type UpdateInfo,
 } from '@/utils/updateChecker';
+import {
+  loadAlertSettings,
+  saveAlertSettings,
+  syncPriceAlertConfig,
+  getPriceAlertStatus,
+  requestAlertPermission,
+  testAlertNotification,
+  openBatteryOptimizationSettings,
+  runAlertCheckNow,
+  DEFAULT_ALERT_SETTINGS,
+  type PriceAlertSettings,
+  type PriceAlertStatus,
+} from '@/utils/priceAlertApi';
 
 /** گزینه‌های بازه بروزرسانی — عیناً از پامپی (settings-extract/02) */
 const REFRESH_INTERVAL_OPTIONS = [
@@ -61,6 +79,22 @@ const REFRESH_INTERVAL_OPTIONS = [
   { key: '10', label: '۱۰ دقیقه' },
   { key: '15', label: '۱۵ دقیقه' },
   { key: '30', label: '۳۰ دقیقه' },
+];
+
+/** v1.3.8 — آستانهٔ رشد اعلان‌ها: کوین‌ها پیش‌فرض ۲۰٪، طلا/دلار پیش‌فرض ۱٪ */
+const COIN_THRESHOLD_OPTIONS = [
+  { key: '5', label: '۵ درصد' },
+  { key: '10', label: '۱۰ درصد' },
+  { key: '15', label: '۱۵ درصد' },
+  { key: '20', label: '۲۰ درصد' },
+  { key: '30', label: '۳۰ درصد' },
+  { key: '50', label: '۵۰ درصد' },
+];
+const METAL_THRESHOLD_OPTIONS = [
+  { key: '0.5', label: 'نیم درصد' },
+  { key: '1', label: '۱ درصد' },
+  { key: '2', label: '۲ درصد' },
+  { key: '3', label: '۳ درصد' },
 ];
 
 /** راهنماهای مدیریت دارایی — v1.2.0 (تب‌ها + IP) */
@@ -219,6 +253,97 @@ export default function SettingsScreen() {
 
   const refreshInterval = String(settings.refreshInterval ?? 5);
 
+  // ── v1.3.8 — اعلان رشد قیمت (سرویس پس‌زمینهٔ بومی) ──────────────────
+  const [alertSettings, setAlertSettings] = useState<PriceAlertSettings>(DEFAULT_ALERT_SETTINGS);
+  const [alertStatus, setAlertStatus] = useState<PriceAlertStatus | null>(null);
+  const [alertMsg, setAlertMsg] = useState<string | null>(null);
+  const [alertBusy, setAlertBusy] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const s = await loadAlertSettings();
+      await syncPriceAlertConfig();
+      const st = await getPriceAlertStatus();
+      if (alive) {
+        setAlertSettings(s);
+        setAlertStatus(st);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const refreshAlertStatus = useCallback(async () => {
+    setAlertStatus(await getPriceAlertStatus());
+  }, []);
+
+  const handleToggleAlert = useCallback(
+    async (on: boolean) => {
+      setAlertBusy(true);
+      try {
+        if (on) {
+          const granted = await requestAlertPermission();
+          setAlertMsg(
+            granted
+              ? 'اعلان‌ها فعال شد ✅ — با بسته‌بودن برنامه هم کار می‌کند'
+              : 'اجازهٔ نوتیفیکیشن داده نشد — از تنظیمات گوشی > برنامه‌ها > مدیریت دارایی > نوتیفیکیشن‌ها اجازه بدهید',
+          );
+        } else {
+          setAlertMsg('اعلان رشد قیمت خاموش شد');
+        }
+        setAlertSettings(await saveAlertSettings({ enabled: on }));
+        await refreshAlertStatus();
+      } finally {
+        setAlertBusy(false);
+      }
+    },
+    [refreshAlertStatus],
+  );
+
+  const handleThreshold = useCallback(async (patch: Partial<PriceAlertSettings>) => {
+    setAlertBusy(true);
+    try {
+      setAlertSettings(await saveAlertSettings(patch));
+      setAlertMsg('آستانهٔ جدید ذخیره شد ✅');
+    } finally {
+      setAlertBusy(false);
+    }
+  }, []);
+
+  const handleTestAlert = useCallback(async () => {
+    setAlertBusy(true);
+    try {
+      const ok = await testAlertNotification();
+      setAlertMsg(ok ? 'اعلان آزمایشی فرستاده شد — نوار بالا را ببینید 🔔' : 'اجازهٔ نوتیفیکیشن لازم است (کلید را خاموش/روشن کنید)');
+      await refreshAlertStatus();
+    } finally {
+      setAlertBusy(false);
+    }
+  }, [refreshAlertStatus]);
+
+  const handleBattery = useCallback(async () => {
+    const ok = await openBatteryOptimizationSettings();
+    setAlertMsg(ok ? '«Allow / اجازه» را بزنید تا اپ از لیست بهینه‌سازی باتری خارج شود' : 'این صفحه روی این گوشی در دسترس نیست');
+  }, []);
+
+  const handleRunNow = useCallback(async () => {
+    setAlertBusy(true);
+    try {
+      const ok = await runAlertCheckNow();
+      setAlertMsg(ok ? 'بررسی فوری شروع شد — چند ثانیه صبر کنید و صفحه را ببندید/باز کنید' : 'فقط در نسخهٔ اندروید در دسترس است');
+      await refreshAlertStatus();
+    } finally {
+      setAlertBusy(false);
+    }
+  }, [refreshAlertStatus]);
+
+  const alertLastRun =
+    alertStatus && alertStatus.lastRunAt > 0
+      ? new Date(alertStatus.lastRunAt).toLocaleString('fa-IR', { dateStyle: 'short', timeStyle: 'short' })
+      : 'هنوز اجرا نشده';
+
   return (
     <ScrollView
       style={styles.screen}
@@ -256,6 +381,86 @@ export default function SettingsScreen() {
         <Text style={styles.hintText}>
           تمام بخش‌ها (قیمت تتر، صرافی‌ها، کیف پول بلاکچین و فلزات) با بازه انتخابی بروزرسانی می‌شوند
         </Text>
+      </View>
+
+      {/* ── v1.3.8 — اعلان رشد قیمت (حتی وقتی برنامه بسته است) ──── */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Bell size={18} color={colors.dark.accent} />
+          <Text style={styles.sectionTitle}>اعلان رشد قیمت</Text>
+          {alertBusy && <ActivityIndicator size="small" color={colors.dark.accent} style={styles.alertBusy} />}
+        </View>
+
+        <View style={styles.alertRow}>
+          <View style={styles.alertRowText}>
+            <Text style={styles.alertRowTitle}>اعلان رشد، حتی وقتی برنامه بسته است</Text>
+            <Text style={styles.hintText}>
+              سرویس پس‌زمینه (هر ~۱۵ دقیقه و بلافاصله بعد از وصل‌شدن اینترنت) قیمت
+              دارایی‌های کیف پول و صرافی‌ها را چک می‌کند: کوین‌ها از آستانهٔ رشد کوین،
+              طلای ۱۸ عیار و دلار از آستانهٔ طلا/دلار بالاتر بروند، همان لحظه نوتیفیکیشن می‌آید.
+            </Text>
+          </View>
+          <Switch
+            value={alertSettings.enabled}
+            onValueChange={handleToggleAlert}
+            trackColor={{ false: colors.dark.border, true: colors.dark.accent }}
+            thumbColor="#fff"
+            testID="price-alert-switch"
+          />
+        </View>
+
+        {alertSettings.enabled && (
+          <>
+            <DropdownPicker
+              label="آستانهٔ رشد کوین‌ها (۲۴ ساعت)"
+              value={String(alertSettings.coinPct)}
+              options={COIN_THRESHOLD_OPTIONS}
+              onSelect={(key) => handleThreshold({ coinPct: Number(key) })}
+              testID="price-alert-coin-threshold"
+            />
+            <DropdownPicker
+              label="آستانهٔ رشد طلا و دلار (روزانه)"
+              value={String(alertSettings.metalPct)}
+              options={METAL_THRESHOLD_OPTIONS}
+              onSelect={(key) => handleThreshold({ metalPct: Number(key) })}
+              testID="price-alert-metal-threshold"
+            />
+
+            <View style={styles.alertBtnRow}>
+              <Pressable style={({ pressed }) => [styles.alertBtn, pressed && { opacity: 0.85 }]} onPress={handleTestAlert} testID="price-alert-test">
+                <BellRing size={14} color={colors.dark.accent} />
+                <Text style={styles.alertBtnText}>اعلان آزمایشی</Text>
+              </Pressable>
+              <Pressable style={({ pressed }) => [styles.alertBtn, pressed && { opacity: 0.85 }]} onPress={handleRunNow} testID="price-alert-runnow">
+                <Zap size={14} color={colors.dark.accent} />
+                <Text style={styles.alertBtnText}>بررسی همین حالا</Text>
+              </Pressable>
+              <Pressable style={({ pressed }) => [styles.alertBtn, pressed && { opacity: 0.85 }]} onPress={handleBattery} testID="price-alert-battery">
+                <BatteryCharging size={14} color={colors.dark.accent} />
+                <Text style={styles.alertBtnText}>بهینه‌سازی باتری</Text>
+              </Pressable>
+            </View>
+
+            {alertStatus && (
+              <Text style={styles.alertStatusText}>
+                {alertStatus.hasPermission ? '' : '⚠️ اجازهٔ نوتیفیکیشن داده نشده است.\n'}
+                {alertStatus.assetCount > 0
+                  ? `${alertStatus.assetCount.toLocaleString('fa-IR')} دارایی زیر نظر — آخرین بررسی: ${alertLastRun}`
+                  : 'هنوز دارایی‌ای زیر نظر نیست — یک‌بار وارد تب کیف پول/ارز دیجیتال شوید'}
+                {alertStatus.lastError ? `\nآخرین خطا: ${alertStatus.lastError}` : ''}
+              </Text>
+            )}
+            {alertMsg && <Text style={styles.hintText}>{alertMsg}</Text>}
+
+            <Text style={styles.hintText}>
+              📌 نکتهٔ مهم اندروید: اگر برنامه را از تنظیمات گوشی «Force Stop» کنید،
+              اندروید اعلان پس‌زمینه را تا بازشدن دوبارهٔ برنامه قطع می‌کند (برای همهٔ
+              اپ‌ها این‌طور است) — بستن عادی و سوایپ مشکلی ندارد. روی گوشی‌های شیائومی،
+              سامسونگ و هوآوی دکمهٔ «بهینه‌سازی باتری» را بزنید و اجازه بدهید تا سیستم
+              سرویس اعلان را نکشد. برای هر ارز در هر روز حداکثر یک اعلان می‌آید.
+            </Text>
+          </>
+        )}
       </View>
 
       {/* ── ظاهر برنامه (extract 03) ───────────────────────────── */}
@@ -440,6 +645,56 @@ const styles = createThemedStyles(() =>
       color: colors.dark.textMuted,
       textAlign: 'right',
       marginTop: 10,
+      lineHeight: 20,
+    },
+
+    // ── v1.3.8 — بخش اعلان رشد قیمت ──
+    alertBusy: {
+      marginHorizontal: 8,
+    },
+    alertRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      marginTop: 4,
+    },
+    alertRowText: {
+      flex: 1,
+    },
+    alertRowTitle: {
+      fontSize: 14,
+      fontWeight: '700' as const,
+      color: colors.dark.text,
+      textAlign: 'right',
+      marginBottom: 4,
+    },
+    alertBtnRow: {
+      flexDirection: 'row-reverse',
+      flexWrap: 'wrap',
+      gap: 8,
+      marginTop: 14,
+    },
+    alertBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      backgroundColor: colors.dark.card,
+      borderWidth: 1,
+      borderColor: colors.dark.border,
+      borderRadius: 12,
+      paddingHorizontal: 12,
+      paddingVertical: 9,
+    },
+    alertBtnText: {
+      fontSize: 12,
+      fontWeight: '600' as const,
+      color: colors.dark.text,
+    },
+    alertStatusText: {
+      fontSize: 12,
+      color: colors.dark.textSecondary,
+      textAlign: 'right',
+      marginTop: 12,
       lineHeight: 20,
     },
 

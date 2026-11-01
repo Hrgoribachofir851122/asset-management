@@ -25,6 +25,7 @@ import { AppProvider, useApp } from '@/contexts/AppContext';
 import { ThemedAlertHost } from '@/components/ThemedAlert';
 // v1.2.0 — بنر بروزرسانی (بالای همهٔ صفحات وقتی Release جدیدی روی گیتهاب باشد)
 import UpdateBanner from '@/components/UpdateBanner';
+import { syncPriceAlertConfig } from '@/utils/priceAlertApi';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -98,6 +99,16 @@ function RootNavigator() {
 
 export default function RootLayout() {
   useReactQueryAppStateSync();
+
+  // v1.3.8 — همگام‌سازی لیست دارایی‌های «تحت نظر» سرویس اعلان رشد قیمت با
+  // آخرین کش‌های موجودی (روی وب no-op است). اگر کاربر اعلان را فعال کرده باشد،
+  // سرویس پس‌زمینه با همین لیست کار می‌کند.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      syncPriceAlertConfig().catch(() => {});
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, []);
 
   return (
     <GestureHandlerRootView style={styles.flex}>

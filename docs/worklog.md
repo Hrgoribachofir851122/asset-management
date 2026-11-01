@@ -4,6 +4,36 @@
 
 ---
 
+---
+
+## 2026-11-01 — نسخه 1.3.8 (versionCode 12) — «اعلان رشد قیمت + نسخهٔ وب طلاین»
+
+**درخواست کاربر:** ① اگر ارزِ کیف پول/صرافی در یک روز ≥۲۰٪ رشد کند اعلان بیاید، حتی وقتی برنامه
+کاملاً بسته است و اینترنت تازه وصل شده — بدون بازکردن برنامه. ② نسخهٔ وبِ روی ریلوی هم
+«قیمت طلایین در دسترس نیست» می‌دهد. ③ اعلان طلا/دلار برای تغییر ≥۱٪ هم اضافه شود. (تأیید شد)
+
+**ساختار فنی:**
+- بومی (Kotlin): `PriceAlertWorker` روی WorkManager دوره‌ای ۱۵ دقیقه‌ای با قید
+  NetworkType.CONNECTED → با وصل‌شدن اینترنت اجرا می‌شود، حتی با برنامهٔ بسته.
+  کوین‌ها: Binance ticker 24hr گروهی (با فیلترشکن) → تکی → نوبیتکس apiv2 (بدون فیلترشکن).
+  استیبل‌ها: نوبیتکس IRT. طلا/دلار: فیلد dp فایل ajax.json تل‌جو (تست زنده: geram18 dp=1.16).
+  رشد ≥ آستانه → NotificationCompat روی کانال price_alerts + dedupe روزانه + خلاصهٔ گروهی.
+- پل: `PriceAlertModule` (configure/requestPermission/test/runNow/getStatus/battery)
+  + `MainActivity.onRequestPermissionsResult` → callback ماژول.
+- JS: `utils/priceAlertApi.ts` لیست دارایی‌ها را از کش‌های موجودی صرافی‌ها
+  (`@wallet_balance_cache_*`) و کیف پول‌های بلاکچین می‌سازد و در app start +
+  هر تازه‌سازی موجودی + تغییر تنظیمات به بومی می‌فرستد. بخش تنظیمات در
+  `app/(tabs)/settings/index.tsx` + همگام‌سازی در `_layout` و صفحهٔ کیف پول.
+- وب طلاین: مرتب‌سازی لایه‌ها برای مرورگر (allorigins raw + get با cb → codetabs →
+  corsproxy → سرور → سایت؛ t.me مستقیم فقط موبایل). تست CORS همان روز:
+  فقط allorigins-raw با Origin سایت جواب 200 می‌داد.
+
+**مشکل بیلد (برای یادآوری):** R8/Metro در کانتینر ۴ گیگی OOM می‌شد — ریشه: یک
+KotlinCompileDaemon سرگردان با heap 2560m و keepalive دو ساعته ۱.۱ گیگ نگه داشته بود؛
+kill + NODE_OPTIONS=1280 برای Metro → بیلد سبز شد (۱۱.۸۷MB، minify سر جایش). یادآوری:
+قبل از بیلد `ps aux | grep KotlinCompileDaemon` و kill کن.
+
+
 ## 2026-10-31 — نسخه 1.3.7 (versionCode 11) — «قیمت طلایین بدون سرور»
 
 **گزارش کاربر:** در بخش دارایی ریالی، قیمت خرید/فروش طلایین (taline.ir) نشان داده
