@@ -28,9 +28,9 @@ class PriceAlertModule(private val reactContext: ReactApplicationContext) :
     override fun getName(): String = "PriceAlert"
 
     @ReactMethod
-    fun configure(enabled: Boolean, coinPct: Double, metalPct: Double, watchedJson: String, promise: Promise) {
+    fun configure(enabled: Boolean, coinPct: Double, metalPct: Double, repeatHours: Double, watchedJson: String, promise: Promise) {
         try {
-            PriceAlertPrefs.saveConfig(reactContext, enabled, coinPct, metalPct, watchedJson)
+            PriceAlertPrefs.saveConfig(reactContext, enabled, coinPct, metalPct, repeatHours, watchedJson)
             val wm = androidx.work.WorkManager.getInstance(reactContext)
             if (enabled) {
                 PriceAlertWorker.schedulePeriodic(reactContext)
@@ -38,10 +38,65 @@ class PriceAlertModule(private val reactContext: ReactApplicationContext) :
             } else {
                 wm.cancelUniqueWork(PriceAlertWorker.PERIODIC_NAME)
                 wm.cancelUniqueWork(PriceAlertWorker.ONESHOT_NAME)
+                wm.cancelUniqueWork(PriceAlertWorker.ON_CONNECT_NAME)
             }
             promise.resolve(true)
         } catch (e: Exception) {
             promise.reject("CONFIGURE_FAIL", e.message, e)
+        }
+    }
+
+    /**
+     * v1.4.2 — درخواست مجوز نوتیفیکیشن برای اندروید ۱۳+ (API 33): بدون این
+     * مجوز، سرویس و WorkManager سالم‌اند ولی هیچ نوتیفیکیشنی نشان داده
+     * نمی‌شود و کاربر فکر می‌کند «اعلان کار نمی‌کند».
+     * جوابِ کاربر از onRequestPermissionsResult در MainActivity به
+     * onPermissionResult همین‌جا (companion) برمی‌گردد.
+     */
+    @ReactMethod
+    fun requestNotificationPermission(promise: Promise) {
+        try {
+            if (Build.VERSION.SDK_INT < 33) {
+                promise.resolve(true)
+                return
+            }
+            val granted = androidx.core.content.ContextCompat.checkSelfPermission(
+                reactContext,
+                android.Manifest.permission.POST_NOTIFICATIONS,
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            if (granted) {
+                promise.resolve(true)
+                return
+            }
+            val activity = reactContext.getCurrentActivity()
+            if (activity == null) {
+                promise.resolve(false)
+                return
+            }
+            pendingPermissionPromise = promise
+            androidx.core.app.ActivityCompat.requestPermissions(
+                activity,
+                arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
+                4242,
+            )
+        } catch (e: Exception) {
+            promise.resolve(false)
+        }
+    }
+
+    companion object {
+        /** درخواست مجوز بازِ فعلی — جوابش از MainActivity می‌آید */
+        private var pendingPermissionPromise: Promise? = null
+
+        /** MainActivity.onRequestPermissionsResult این را صدا می‌زند */
+        @JvmStatic
+        fun onPermissionResult(requestCode: Int, grantResults: IntArray) {
+            if (requestCode != 4242) return
+            val promise = pendingPermissionPromise
+            pendingPermissionPromise = null
+            val granted = grantResults.isNotEmpty() &&
+                grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED
+            promise?.resolve(granted)
         }
     }
 
@@ -90,24 +145,29 @@ class PriceAlertModule(private val reactContext: ReactApplicationContext) :
         }
     }
 
+    /**
+     * v1.4.2 — نتیجهٔ رشته‌ای برمی‌گردد تا JS بداند واقعاً چه شد:
+     *   "already" — از قبل مجاز است (هیچ پنجره‌ای لازم نیست)
+     *   "fired"   — پنجرهٔ رسمی سیستم فرستاده شد
+     *   "failed"  — روی این گوشی باز نشد (JS خودش لیست تنظیمات را باز می‌کند)
+     * JS بعد از ~۲ ثانیه دوباره چک می‌کند؛ اگر پنجره باز نشده بود (شیائومی
+     * گاهی قورت می‌دهد) خودش لیست بهینه‌سازی باتری را باز می‌کند.
+     */
     @ReactMethod
     fun requestIgnoreBatteryOptimizations(promise: Promise) {
         try {
-            // v1.4.1 — روی برخی گوشی‌ها (شیائومی/Some bridgeless states)
-            // currentActivity تهی است یا پنجرهٔ سیستم باز نمی‌شود؛ JS خودش
-            // بعدش لیست تنظیمات را باز می‌کند. اگر اکتیویتی هست، دیالوگ رسمی.
             val pm = reactContext.getSystemService(android.content.Context.POWER_SERVICE) as PowerManager
             if (pm.isIgnoringBatteryOptimizations(reactContext.packageName)) {
-                promise.resolve(true) // از قبل مجاز — هیچ پنجره‌ای لازم نیست
+                promise.resolve("already") // از قبل مجاز — هیچ پنجره‌ای لازم نیست
                 return
             }
             val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
                 .setData(Uri.parse("package:${reactContext.packageName}"))
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             reactContext.startActivity(intent)
-            promise.resolve(true)
+            promise.resolve("fired")
         } catch (e: Exception) {
-            promise.resolve(false) // JS → لیست بهینه‌سازی باتری را باز می‌کند
+            promise.resolve("failed") // JS → لیست بهینه‌سازی باتری را باز می‌کند
         }
     }
 

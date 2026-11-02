@@ -60,7 +60,12 @@ import {
 import { fetchForeignExchangeBalance } from '@/utils/foreignExchangeBalances';
 import { fetchForeignPeriodPnl } from '@/utils/foreignExchangePnl';
 import { noteWatchedExchangeAssets } from '@/utils/priceAlertApi';
-import BlinkFrame from '@/components/BlinkFrame';
+// v1.4.2 — کادر چشمک‌زن دور کل کارت صرافی + سنسور کیفِ بسته + ضخامت متغیر
+import BlinkFrame, {
+  GroupBlinkFrame,
+  BlinkGroupSensor,
+  sensorItemsFrom,
+} from '@/components/BlinkFrame';
 import { exchangeNow, markClockStale } from '@/utils/exchangeClock';
 import LocalAssetsSection from '@/components/LocalAssetsSection';
 // v1.2.0 — کارت پیام IP تحریمی برای دو تب «کیف پول بلاکچین» و «ارز دیجیتال»
@@ -3568,6 +3573,20 @@ function WalletItem({
     return DUST_FILTER_USD;
   }, [wallet.exchangeId, data]);
 
+  // v1.4.2 — سنسور چشمک‌زن برای کیفِ جمع‌شده (بسته): ردیف‌ها مانت نیستند ولی
+  // کارتِ صرافی باید باز هم چشمک بزند تا کاربر بداند کدام صرافی سیگنال دارد
+  const sensorItems = useMemo(() => {
+    if (!data) return [];
+    return sensorItemsFrom(
+      data.balances.map((b) => ({
+        symbol: b.iconSymbol ?? b.asset,
+        price: b.total > 0 && b.valueUsd > 0 ? b.valueUsd / b.total : 0,
+        pct24h: null,
+      })),
+    );
+  }, [data]);
+  const exchGroup = `exch:${wallet.id}`;
+
   // Only the sections that actually hold something get a tab.
   // v1.5.6 — تب «فیوچرز» حتی وقتی موجودی مستقیم ندارد هم می‌آید اگر پوزیشن
   // باز وجود داشته باشد (OKX/Bybit با حساب اسپات‌محور) — «دارایی در همه
@@ -3627,7 +3646,9 @@ function WalletItem({
   );
 
   return (
-    <View style={styles.walletCard}>
+    <GroupBlinkFrame group={exchGroup} style={styles.walletCard}>
+      {/* v1.4.2 — سنسور نامرئی: وقتی کارت بسته است هم سیگنال ردیف‌ها شمرده می‌شود */}
+      <BlinkGroupSensor group={exchGroup} items={sensorItems} />
       <Pressable style={styles.walletHeader} onPress={onToggle}>
         <View style={styles.walletLeft}>
           <View style={styles.walletIcon}>
@@ -3823,6 +3844,7 @@ function WalletItem({
                       bal={bal}
                       usdtToToman={usdtToToman}
                       pnlPeriodDays={assetPnlPeriod}
+                      group={`exch:${wallet.id}`}
                     />
                   ))}
                   {aggregated.length === 0 && (
@@ -3897,6 +3919,7 @@ function WalletItem({
                       bal={bal}
                       usdtToToman={usdtToToman}
                       pnlPeriodDays={assetPnlPeriod}
+                      group={`exch:${wallet.id}`}
                     />
                   ))}
                   {activeSection === 'futures' && futuresPositions.length > 0 && (
@@ -3951,7 +3974,7 @@ function WalletItem({
           )}
         </View>
       )}
-    </View>
+    </GroupBlinkFrame>
   );
 }
 
@@ -4117,10 +4140,13 @@ function BalanceRow({
   bal,
   usdtToToman,
   pnlPeriodDays,
+  group,
 }: {
   bal: WalletBalance;
   usdtToToman: number;
   pnlPeriodDays: PnlPeriodDays;
+  /** v1.4.2 — گروه صرافیِ مادر: کادر دور کل کارت هم روشن شود */
+  group?: string | null;
 }) {
   const hasReturn =
     bal.avgCost !== undefined && bal.avgCost > 0 && bal.pnlPercent !== undefined;
@@ -4133,6 +4159,7 @@ function BalanceRow({
     <BlinkFrame
       blinkKey={`coin:${resolveSym}`}
       price={unitPrice}
+      group={group ?? null}
       borderRadius={12}
       testID={`blink-ex-${resolveSym}`}
     >
@@ -4191,10 +4218,13 @@ function AggregatedRow({
   bal,
   usdtToToman,
   pnlPeriodDays,
+  group,
 }: {
   bal: AggregatedBalance;
   usdtToToman: number;
   pnlPeriodDays: PnlPeriodDays;
+  /** v1.4.2 — گروه صرافیِ مادر */
+  group?: string | null;
 }) {
   // Chips only when the asset lives in more than one (or a non-spot) section.
   const showSectionChips =
@@ -4210,6 +4240,7 @@ function AggregatedRow({
     <BlinkFrame
       blinkKey={`coin:${resolveSym}`}
       price={unitPrice}
+      group={group ?? null}
       borderRadius={12}
       testID={`blink-agg-${resolveSym}`}
     >

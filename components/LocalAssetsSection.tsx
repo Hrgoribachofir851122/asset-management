@@ -19,7 +19,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import colors from '@/constants/colors';
 import { createThemedStyles } from '@/utils/themeStyles';
 // v1.4.0/1.4.1 — چشمک‌زن رشد/ریزش: overlay داخل چیپ (چیدمان دست‌نخورده)
-import { BlinkOverlay } from '@/components/BlinkFrame';
+// v1.4.2 — GroupBlinkFrame: کادر چشمک‌زن دور کل کارت فلزات وقتی چیپی سیگنال دارد
+import { BlinkOverlay, GroupBlinkFrame } from '@/components/BlinkFrame';
 import { useGrowthBlink } from '@/utils/growthSignals';
 import {
   fetchIranMarketPrices,
@@ -256,7 +257,9 @@ export default function LocalAssetsSection({
   const talineMinutes = taline ? Math.max(1, Math.round((Date.now() - taline.updatedAt) / 60000)) : 0;
 
   return (
-    <View style={styles.card}>
+    <GroupBlinkFrame group="metals" style={styles.card} borderRadius={16}>
+    {/* v1.4.2 — وقتی هر چیپ فلزات/دلار سیگنال رشد/ریزش بگیرد، دور کل کارت
+        هم کادر چشمک‌زن (تک‌رنگ یا دورنگ به‌تناسب) می‌آید */}
       {/* ── header ── */}
       <View style={styles.header}>
         <Landmark size={18} color={colors.dark.accent} />
@@ -612,7 +615,7 @@ export default function LocalAssetsSection({
           )}
         </>
       )}
-    </View>
+    </GroupBlinkFrame>
   );
 }
 
@@ -923,8 +926,14 @@ function PriceChip({
         : formatFullToman(value)
       : '…';
   // v1.4.1 — چشمک‌زن به‌صورت overlay داخل خود چیپ (نه wrapper) تا چیدمان
-  // شبکهٔ خانه‌های قیمت — همان اندازه‌های یکنواخت قبل — دست‌نخورده بماند.
-  const { state: blinkState } = useGrowthBlink(blinkKey ?? null, value ?? 0, null);
+  // شبکهٔ قیمت‌های لحظه‌ای — همان اندازه‌های یکنواخت قبل — دست‌نخورده بماند.
+  // v1.4.2 — چیپ‌ها عضو گروه «metals» (کادر دور کل کارت) + ضخامت متغیر
+  const { state: blinkState, strength: blinkStrength } = useGrowthBlink(
+    blinkKey ?? null,
+    value ?? 0,
+    null,
+    { group: 'metals' },
+  );
   return (
     <View
       style={[
@@ -945,7 +954,9 @@ function PriceChip({
       >
         {text}
       </Text>
-      {blinkKey ? <BlinkOverlay state={blinkState} borderRadius={8} /> : null}
+      {blinkKey ? (
+        <BlinkOverlay state={blinkState} strength={blinkStrength} borderRadius={8} />
+      ) : null}
     </View>
   );
 }

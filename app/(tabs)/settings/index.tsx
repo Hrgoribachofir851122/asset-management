@@ -57,6 +57,8 @@ import {
   loadAlertConfig,
   saveAlertConfigLocal,
   syncPriceAlertConfig,
+  DEFAULT_ALERT_CONFIG,
+  requestNotificationPermission,
   testAlert,
   checkNow,
   getAlertStatus,
@@ -70,6 +72,9 @@ import {
 
 /** آستانه‌های اعلان — گزینه‌ها به درصد */
 const COIN_THRESHOLD_OPTIONS = [
+  { key: '1', label: '۱ درصد' },
+  { key: '2', label: '۲ درصد' },
+  { key: '3', label: '۳ درصد' },
   { key: '5', label: '۵ درصد' },
   { key: '10', label: '۱۰ درصد' },
   { key: '15', label: '۱۵ درصد' },
@@ -85,6 +90,20 @@ const METAL_THRESHOLD_OPTIONS = [
   { key: '1.5', label: '۱.۵ درصد' },
   { key: '2', label: '۲ درصد' },
   { key: '3', label: '۳ درصد' },
+  { key: '5', label: '۵ درصد' },
+];
+
+/**
+ * v1.4.2 — تکرار اعلان: تا وقتی دارایی بالای آستانه مانده، هر چند ساعت دوباره
+ * اعلان بدهد (برای وقتی که اعلان اول را ندیدی). ۰ = فقط بار اول (رفتار قدیمی).
+ */
+const REPEAT_HOURS_OPTIONS = [
+  { key: '0', label: 'فقط بار اول' },
+  { key: '1', label: 'هر ۱ ساعت' },
+  { key: '3', label: 'هر ۳ ساعت' },
+  { key: '6', label: 'هر ۶ ساعت (پیش‌فرض)' },
+  { key: '12', label: 'هر ۱۲ ساعت' },
+  { key: '24', label: 'هر ۲۴ ساعت' },
 ];
 
 /** زمان فارس‌شده برای خط وضعیت */
@@ -271,7 +290,7 @@ function UpdateCard() {
  * خط وضعیت: آخرین بررسی/آخرین خطا/تعداد اعلان.
  */
 function PriceAlertCard() {
-  const [cfg, setCfg] = useState<PriceAlertConfig>({ enabled: false, coinPct: 20, metalPct: 0.5 });
+  const [cfg, setCfg] = useState<PriceAlertConfig>(DEFAULT_ALERT_CONFIG);
   const [status, setStatus] = useState<PriceAlertStatus>({});
   const [batteryOk, setBatteryOk] = useState(true);
   const [busy, setBusy] = useState<'test' | 'check' | 'battery' | null>(null);
@@ -315,6 +334,11 @@ function PriceAlertCard() {
       const next = { ...cfg, enabled: on };
       setCfg(next);
       await saveAlertConfigLocal(next);
+      // v1.4.2 — روی اندروید ۱۳+ اول مجوز نوتیفیکیشن را بگیر؛ بدون آن سرویس
+      // سالم کار می‌کند ولی هیچ اعلانی نشان داده نمی‌شود
+      if (on && Platform.OS === 'android') {
+        await requestNotificationPermission();
+      }
       await syncPriceAlertConfig();
       if (on && Platform.OS === 'android') {
         const bat = await isIgnoringBatteryOptimizations();
@@ -355,18 +379,47 @@ function PriceAlertCard() {
     }
   }, []);
 
+  /**
+   * v1.4.2 — زنجیرهٔ مطمئن باتری: دیالوگ رسمی سیستم → ۱.۸ ثانیه صبر و چک
+   * مجدد → اگر مجوز نیامده بود (شیائومی گاهی پنجره را قورت می‌دهد و هیچ
+   * پنجره‌ای باز نمی‌شود) خودکار «لیست بهینه‌سازی باتری» باز می‌شود → اگر
+   * آن هم نشد، خودکار صفحهٔ «تنظیمات برنامه» باز می‌شود. کاربر در هر حالت
+   * یک پنجرهٔ واقعی از گوشی می‌بیند و پیام کوتاهِ روشن می‌گیرد.
+   */
   const handleBattery = useCallback(async () => {
     setBusy('battery');
     try {
-      const fired = await requestIgnoreBatteryOptimizations();
-      // پنجرهٔ سیستمی باز نشد (مثل شیائومی) → خودکار تنظیمات باتری باز می‌شود
-      if (!fired) {
-        await openBatterySettings();
-        flash('پنجرهٔ مستقیم باز نشد — لیست «بهینه‌سازی باتری» باز شد؛ برنامه را پیدا و «Allow» کنید');
-      } else {
-        flash('پنجرهٔ سیستم باز شد — «Allow» را بزنید. اگر پنجره‌ای نیامد، دکمهٔ «تنظیمات برنامه» را بزنید');
+      const already = await isIgnoringBatteryOptimizations();
+      if (already) {
+        setBatteryOk(true);
+        flash('از قبل مجاز است — کاری لازم نیست ✓');
+        return;
       }
-      setTimeout(() => void isIgnoringBatteryOptimizations().then(setBatteryOk), 3000);
+      const result = await requestIgnoreBatteryOptimizations();
+      if (result === 'already') {
+        setBatteryOk(true);
+        flash('از قبل مجاز است — کاری لازم نیست ✓');
+        return;
+      }
+      if (result === 'failed') {
+        // پنجرهٔ مستقیم روی این گوشی باز نشد → لیست سیستمی
+        await openBatterySettings();
+        flash('پنجرهٔ مستقیم باز نشد — لیست «بهینه‌سازی باتری» باز شد: برنامه را پیدا و Allow کنید');
+        return;
+      }
+      // پنجرهٔ رسمی فرستاده شد — بگذار کاربر جواب دهد، بعد چک کن
+      flash('پنجرهٔ مجوز اندروید باز شد — گزینهٔ Allow را بزنید');
+      const check = setTimeout(() => {
+        void (async () => {
+          const ok = await isIgnoringBatteryOptimizations();
+          setBatteryOk(ok);
+          if (!ok) {
+            // پنجره باز شد ولی تأیید نشد یا گوشی پنجره را نشان نداد → لیست
+            await openBatterySettings().catch(() => {});
+          }
+        })();
+      }, 1800);
+      void check;
     } finally {
       setBusy(null);
     }
@@ -443,6 +496,20 @@ function PriceAlertCard() {
             triggerBackgroundColor={colors.dark.background}
             testID="price-alert-metal-threshold"
           />
+          {/* v1.4.2 — تکرار اعلان: برای وقتی که اعلان اول را ندیدی */}
+          <DropdownPicker
+            label="🔁 تکرار اعلان تا دیدن (تا وقتی سیگنال برقرار است):"
+            value={String(cfg.repeatHours)}
+            options={REPEAT_HOURS_OPTIONS}
+            onSelect={(key) => void handleThreshold({ repeatHours: Number(key) })}
+            showLabelOnBar
+            triggerBackgroundColor={colors.dark.background}
+            testID="price-alert-repeat"
+          />
+          <Text style={styles.hintText}>
+            با «تکرار»، تا وقتی دارایی بالای آستانه مانده، همان اعلان هر چند ساعت دوباره
+            می‌آید — مثل یادآور. «فقط بار اول» رفتار قدیمی است (اعلان فقط یک‌بار).
+          </Text>
 
           {isAndroid && (
           <>
@@ -479,21 +546,20 @@ function PriceAlertCard() {
           >
             <BatteryCharging size={14} color={batteryOk ? colors.dark.green : colors.dark.red} />
             <Text style={[styles.alertBtnText, !batteryOk && { color: colors.dark.red }]}>
-              {batteryOk ? '✓ بهینه‌سازی باتری غیرفعال است' : 'بهینه‌سازی باتری (برای اعلان با برنامهٔ بسته لازم است)'}
+              {batteryOk ? '✓ بهینه‌سازی باتری غیرفعال است' : 'بهینه‌سازی باتری خاموش است — بزن تا پنجرهٔ مجوز باز شود'}
             </Text>
           </Pressable>
-          {!batteryOk && (
-            <View style={styles.alertBtnRow}>
-              <Pressable style={({ pressed }) => [styles.alertBtn, pressed && { opacity: 0.85 }]} onPress={() => void handleBatterySettings()} testID="price-alert-battery-list">
-                <BatteryCharging size={14} color={colors.dark.accent} />
-                <Text style={styles.alertBtnText}>لیست بهینه‌سازی باتری</Text>
-              </Pressable>
-              <Pressable style={({ pressed }) => [styles.alertBtn, pressed && { opacity: 0.85 }]} onPress={() => void handleAppDetails()} testID="price-alert-app-details">
-                <Pin size={14} color={colors.dark.accent} />
-                <Text style={styles.alertBtnText}>تنظیمات برنامه (شیائومی/هوآوی)</Text>
-              </Pressable>
-            </View>
-          )}
+          {/* v1.4.2 — دو راهِ دستی همیشه دیده می‌شوند (نه فقط بعد از خطا) */}
+          <View style={styles.alertBtnRow}>
+            <Pressable style={({ pressed }) => [styles.alertBtn, pressed && { opacity: 0.85 }]} onPress={() => void handleBatterySettings()} testID="price-alert-battery-list">
+              <BatteryCharging size={14} color={colors.dark.accent} />
+              <Text style={styles.alertBtnText}>لیست بهینه‌سازی باتری</Text>
+            </Pressable>
+            <Pressable style={({ pressed }) => [styles.alertBtn, pressed && { opacity: 0.85 }]} onPress={() => void handleAppDetails()} testID="price-alert-app-details">
+              <Pin size={14} color={colors.dark.accent} />
+              <Text style={styles.alertBtnText}>تنظیمات برنامه (شیائومی/هوآوی)</Text>
+            </Pressable>
+          </View>
 
           <View style={styles.alertNoteBox}>
             <Pin size={13} color={colors.dark.red} />

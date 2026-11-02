@@ -46,7 +46,11 @@ import { directIconCdnUrl } from '@/utils/blockchainWalletApi';
 
 import { ThemedAlert } from '@/components/ThemedAlert';
 // v1.4.0 — کادر چشمک‌زن رشد/ریزش قیمت
-import BlinkFrame from '@/components/BlinkFrame';
+import BlinkFrame, {
+  GroupBlinkFrame,
+  BlinkGroupSensor,
+  sensorItemsFrom,
+} from '@/components/BlinkFrame';
 // v1.2.0 — کارت پیام IP تحریمی (جایگزین کامل محتوای تب با IP ایران)
 import IpBlockedNotice from '@/components/IpBlockedNotice';
 
@@ -1023,7 +1027,18 @@ function BlockchainWalletCard({
   ) as [BlockchainNetwork, string][];
 
   return (
-    <View style={styles.walletCard}>
+    <GroupBlinkFrame group={`bc:${wallet.id}`} style={styles.walletCard} borderRadius={16}>
+      {/* v1.4.2 — سنسور نامرئی: وقتی کیف بسته است هم سیگنال توکن‌ها شمرده می‌شود */}
+      <BlinkGroupSensor
+        group={`bc:${wallet.id}`}
+        items={sensorItemsFrom(
+          (data?.tokens ?? []).map((t) => ({
+            symbol: t.symbol,
+            price: t.priceUsd ?? 0,
+            pct24h: t.change24hPct ?? null,
+          })),
+        )}
+      />
       <Pressable style={styles.walletHeader} onPress={onToggle}>
         <View style={[styles.walletAvatar, { backgroundColor: meta.color + '33' }]}>
           <Text style={[styles.walletAvatarText, { color: meta.color }]}>{meta.short}</Text>
@@ -1195,6 +1210,7 @@ function BlockchainWalletCard({
                 blinkKey={`coin:${t.symbol}`}
                 price={t.priceUsd ?? 0}
                 pct24h={t.change24hPct ?? null}
+                group={`bc:${wallet.id}`}
                 borderRadius={12}
                 testID={`blink-coin-${t.symbol}`}
               >
@@ -1311,7 +1327,7 @@ function BlockchainWalletCard({
           </View>
         </View>
       )}
-    </View>
+    </GroupBlinkFrame>
   );
 }
 

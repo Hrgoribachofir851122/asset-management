@@ -26,12 +26,19 @@ export interface PriceAlertConfig {
   coinPct: number;
   /** آستانهٔ رشد/ریزش طلا و دلار (٪ در ۲۴ ساعت) */
   metalPct: number;
+  /**
+   * v1.4.2 — تکرار اعلان: تا وقتی دارایی بالای آستانه مانده، هر چند ساعت
+   * دوباره اعلان بده (۰ = فقط بار اول). برای وقتی که اعلان اول را ندیدی.
+   */
+  repeatHours: number;
 }
 
 export const DEFAULT_ALERT_CONFIG: PriceAlertConfig = {
-  enabled: false,
-  coinPct: 20,
-  metalPct: 0.5,
+  // v1.4.2 — پیش‌فرض‌ها طبق درخواست کاربر: روشن + کوین ۱۰٪ و طلا/دلار ۱٪
+  enabled: true,
+  coinPct: 10,
+  metalPct: 1,
+  repeatHours: 6,
 };
 
 export interface PriceAlertStatus {
@@ -42,14 +49,17 @@ export interface PriceAlertStatus {
 }
 
 interface NativePriceAlert {
-  configure(enabled: boolean, coinPct: number, metalPct: number, watchedJson: string): Promise<boolean>;
+  configure(enabled: boolean, coinPct: number, metalPct: number, repeatHours: number, watchedJson: string): Promise<boolean>;
   testAlert(): Promise<boolean>;
   checkNow(): Promise<boolean>;
   getStatus(): Promise<string>;
   isIgnoringBatteryOptimizations(): Promise<boolean>;
-  requestIgnoreBatteryOptimizations(): Promise<boolean>;
+  /** v1.4.2 — "already" | "fired" | "failed" */
+  requestIgnoreBatteryOptimizations(): Promise<string>;
   openBatterySettings(): Promise<boolean>;
   openAppDetailsSettings(): Promise<boolean>;
+  /** v1.4.2 — مجوز نوتیفیکیشن اندروید ۱۳+ */
+  requestNotificationPermission(): Promise<boolean>;
 }
 
 function native(): NativePriceAlert | null {
@@ -150,7 +160,7 @@ export async function syncPriceAlertConfig(): Promise<void> {
       ...METAL_WATCHED.map((m) => ({ key: `metal:${m.tgju}`, label: m.label, kind: m.kind, symbol: '', tgju: m.tgju })),
     ];
     const n = native();
-    await n?.configure(cfg.enabled, cfg.coinPct, cfg.metalPct, JSON.stringify(watched));
+    await n?.configure(cfg.enabled, cfg.coinPct, cfg.metalPct, cfg.repeatHours, JSON.stringify(watched));
   } catch {}
 }
 
@@ -188,11 +198,19 @@ export async function isIgnoringBatteryOptimizations(): Promise<boolean> {
   }
 }
 
-export async function requestIgnoreBatteryOptimizations(): Promise<boolean> {
+/**
+ * v1.4.2 — نتیجهٔ درخواست پنجرهٔ مجوز باتری:
+ *   "already" — از قبل مجاز است؛ "fired" — پنجرهٔ سیستم فرستاده شد؛
+ *   "failed"  — باز نشد (شیائومی گاهی قورت می‌دهد) → JS زنجیرهٔ بعدی را
+ *               باز می‌کند.
+ */
+export async function requestIgnoreBatteryOptimizations(): Promise<'already' | 'fired' | 'failed'> {
   try {
-    return (await native()?.requestIgnoreBatteryOptimizations()) ?? false;
+    const r = await native()?.requestIgnoreBatteryOptimizations();
+    if (r === 'already' || r === 'fired' || r === 'failed') return r;
+    return 'failed';
   } catch {
-    return false;
+    return 'failed';
   }
 }
 
@@ -208,6 +226,15 @@ export async function openBatterySettings(): Promise<boolean> {
 export async function openAppDetailsSettings(): Promise<boolean> {
   try {
     return (await native()?.openAppDetailsSettings()) ?? false;
+  } catch {
+    return false;
+  }
+}
+
+/** v1.4.2 — درخواست مجوز نوتیفیکیشن (اندروید ۱۳+؛ پایین‌تر همیشه true) */
+export async function requestNotificationPermission(): Promise<boolean> {
+  try {
+    return (await native()?.requestNotificationPermission()) ?? false;
   } catch {
     return false;
   }

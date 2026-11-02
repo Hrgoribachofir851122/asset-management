@@ -10,12 +10,15 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 
 /**
- * PriceAlertNotification.kt — v1.4.0
+ * PriceAlertNotification.kt — v1.4.2
  *
  * نوتیفیکیشن با هویت برنامه:
- *   • smallIcon = ic_notification (سیلوئت سفیدِ لوگو — استاندارد نوار وضعیت)
- *   • largeIcon = لوگوی گرد واقعی برنامه (سمت راست نوتیفیکیشن) — کاربر با یک
- *     نگاه می‌فهمد اعلان از کدام برنامه است، مثل بقیهٔ اپلیکیشن‌ها.
+ *   • smallIcon = ic_notification (سیلوئت سفیدِ لوگو — استاندارد نوار وضعیت).
+ *     نکتهٔ اندروید: آیکون نوار وضعیت از API 24 به بعد را سیستم اجباراً
+ *     تک‌رنگ می‌کند (هیچ اپی نمی‌تواند رنگی‌اش کند) — برای همین سیلوئتِ
+ *     شفافِ سفید گذاشته‌ایم تا به‌جای مربع تیره، لوگوی تمیز و روشن دیده شود.
+ *   • largeIcon = ic_logo_mirror — v1.4.2: لوگوی رنگیِ برنامه، آینه‌شده
+ *     (خلاف جهت قبلی) به درخواست کاربر، کنار سرتیتر اعلان.
  *   • رنگ accent زرد برنامه؛ سبز برای رشد، قرمز برای ریزش.
  */
 
@@ -48,9 +51,15 @@ object PriceAlertNotification {
             ctx, alertId.hashCode(), launch,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+        // v1.4.2 — لوگوی رنگی آینه‌ای؛ اگر نبود لوگوی گرد ساده
         val largeIcon = try {
-            BitmapFactory.decodeResource(ctx.resources, R.drawable.ic_logo_round)
-        } catch (_: Exception) { null }
+            BitmapFactory.decodeResource(ctx.resources, R.drawable.ic_logo_mirror)
+                ?: BitmapFactory.decodeResource(ctx.resources, R.drawable.ic_logo_round)
+        } catch (_: Exception) {
+            try {
+                BitmapFactory.decodeResource(ctx.resources, R.drawable.ic_logo_round)
+            } catch (_: Exception) { null }
+        }
 
         val builder = if (Build.VERSION.SDK_INT >= 26) {
             NotificationCompat.Builder(ctx, if (up) CHANNEL_RISE else CHANNEL_FALL)

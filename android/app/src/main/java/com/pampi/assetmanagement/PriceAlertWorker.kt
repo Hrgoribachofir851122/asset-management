@@ -44,18 +44,53 @@ class PriceAlertWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker
     companion object {
         const val PERIODIC_NAME = "price_alert_periodic"
         const val ONESHOT_NAME = "price_alert_now"
+        /** v1.4.2 — کارِ «به‌محض وصل‌شدن اینترنت» (قید NetworkType.CONNECTED) */
+        const val ON_CONNECT_NAME = "price_alert_on_connect"
         /** هر ۱۵ دقیقه — حداقل مجاز WorkManager؛ WorkManager خودش در Doze تعویق می‌کند */
         private val PERIOD_MS = 15L
         private const val HTTP_TIMEOUT = 12_000
         /** حداکثر اعلان در هر اجرا — جلوگیری از باران نوتیفیکیشن */
         private const val MAX_NOTIFY_PER_RUN = 6
 
+        /**
+         * v1.4.2 — کار دوره‌ای + کار دوره‌ایِ هر دو فقط وقتی اینترنت وصل است
+         * اجرا می‌شوند؛ یعنی وقتی نت قطع بوده و وصل می‌شود، WorkManager همان
+         * لحظه اجرا می‌کند → اعلان‌های از‌دست‌رفته بلافاصله بعد از وصل‌شدن
+         * اینترنت می‌آیند.
+         */
         fun schedulePeriodic(context: Context) {
             val req = PeriodicWorkRequestBuilder<PriceAlertWorker>(PERIOD_MS, TimeUnit.MINUTES)
+                .setConstraints(
+                    androidx.work.Constraints.Builder()
+                        .setRequiredNetworkType(androidx.work.NetworkType.CONNECTED)
+                        .build(),
+                )
                 .build()
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-                PERIODIC_NAME, ExistingPeriodicWorkPolicy.KEEP, req,
+                PERIODIC_NAME, ExistingPeriodicWorkPolicy.UPDATE, req,
             )
+            armOnConnect(context)
+        }
+
+        /**
+         * v1.4.2 — یک کار یک‌باره با قید «اینترنت وصل». اگر همین حالا وصل است
+         * فوراً اجرا می‌شود؛ اگر قطع است، به‌محض وصل‌شدن اجرا می‌شود.
+         * در configure (هر بازشدن برنامه) دوباره مسلح می‌شود.
+         */
+        fun armOnConnect(context: Context) {
+            try {
+                val req = OneTimeWorkRequestBuilder<PriceAlertWorker>()
+                    .setConstraints(
+                        androidx.work.Constraints.Builder()
+                            .setRequiredNetworkType(androidx.work.NetworkType.CONNECTED)
+                            .build(),
+                    )
+                    .build()
+                WorkManager.getInstance(context).enqueueUniqueWork(
+                    ON_CONNECT_NAME, ExistingWorkPolicy.REPLACE, req,
+                )
+            } catch (_: Exception) {
+            }
         }
 
         fun checkNow(context: Context) {
@@ -153,6 +188,10 @@ class PriceAlertWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker
         val metalReadings = fetchMetalReadings(ctx, metals)
 
         val fired = PriceAlertPrefs.fired(ctx)
+        // v1.4.2 — زمان آخرین اعلان هر دارایی؛ مبنای «تکرار هر N ساعت»
+        val notifAt = PriceAlertPrefs.notifAt(ctx)
+        val repeatHours = PriceAlertPrefs.repeatHours(ctx)
+        val now = System.currentTimeMillis()
         var notified = 0
         for (w in watched) {
             val r = coinReadings[w.key] ?: metalReadings[w.key] ?: continue
@@ -167,16 +206,31 @@ class PriceAlertWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker
                 // گذر تازه از آستانه → اعلان؛ بعدش همان جهت ثبت می‌شود
                 direction != null && direction != prev -> {
                     if (notified < MAX_NOTIFY_PER_RUN) {
-                        notify(ctx, w, direction, r)
+                        notify(ctx, w, direction, r, repeat = false)
                         notified++
+                        notifAt.put(w.key, now)
                     }
                     fired.put(w.key, direction)
                 }
+                // v1.4.2 — هنوز بالای آستانه است و کاربر شاید اعلان قبلی را
+                // ندیده → تا وقتی سیگنال برقرار است، هر N ساعت دوباره اعلان بده
+                direction != null && direction == prev && repeatHours > 0 -> {
+                    val at = notifAt.optLong(w.key, 0L)
+                    if (now - at >= repeatHours * 3_600_000.0 && notified < MAX_NOTIFY_PER_RUN) {
+                        notify(ctx, w, direction, r, repeat = true)
+                        notified++
+                        notifAt.put(w.key, now)
+                    }
+                }
                 // برگشت زیر آستانه → مسلح‌شدن دوباره
-                direction == null && prev.isNotEmpty() -> fired.remove(w.key)
+                direction == null && prev.isNotEmpty() -> {
+                    fired.remove(w.key)
+                    notifAt.remove(w.key)
+                }
             }
         }
         PriceAlertPrefs.saveFired(ctx, fired)
+        PriceAlertPrefs.saveNotifAt(ctx, notifAt)
         return notified
     }
 
@@ -296,17 +350,22 @@ class PriceAlertWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker
 
     // ─── اعلان ─────────────────────────────────────────────────────────────
 
-    private fun notify(ctx: Context, w: Watched, direction: String, r: Reading) {
+    private fun notify(ctx: Context, w: Watched, direction: String, r: Reading, repeat: Boolean) {
         val up = direction == "up"
-        val title = if (up) "📈 رشد قیمت" else "📉 ریزش قیمت"
+        val title = if (repeat) {
+            if (up) "📈 رشد قیمت (تکرار)" else "📉 ریزش قیمت (تکرار)"
+        } else {
+            if (up) "📈 رشد قیمت" else "📉 ریزش قیمت"
+        }
         val sb = StringBuilder()
         sb.append(w.label).append(' ')
         sb.append(toFa(Math.abs(r.pct)))
         sb.append('٪').append(if (up) " رشد در ۲۴ ساعت" else " ریزش در ۲۴ ساعت")
+        if (repeat) sb.append(" — هنوز برقرار است")
         r.priceToman?.let {
             sb.append(" — اکنون: ").append(toFaGrouped(it.toLong())).append(" تومان")
         }
-        sb.append('\n').append(if (up) "آستانه: " else "آستانه: ")
+        sb.append('\n').append("آستانه: ")
             .append(toFa(if (w.kind == "coin") PriceAlertPrefs.coinPct(ctx) else PriceAlertPrefs.metalPct(ctx)))
             .append('٪')
         PriceAlertNotification.post(
