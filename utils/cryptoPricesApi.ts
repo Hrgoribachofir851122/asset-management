@@ -23,8 +23,11 @@ const CACHE_TTL = 10 * 60 * 1000; // 10 min AsyncStorage
 const MEMORY_TTL = 60 * 1000; // 60s in-flight result
 const STALE_TTL = 24 * 60 * 60 * 1000; // stale fallback ≤ 24h
 
-const NOBITEX_STATS_URL =
-  'https://api.nobitex.ir/market/stats?srcCurrency=btc,eth&dstCurrency=rls,usdt';
+// v1.5.1 — همان endpoint ای که fetchUsdtTomanPrice روی گوشی با آن جواب
+// می‌گیرد: apiv2 + POST + کلید بازار «btc-rls» (فرمت {src}-{dst}).
+// نسخهٔ قبلی (GET روی api.nobitex.ir + شکل تودرتو stats.btc.rls) جواب
+// نمی‌داد — دلیل خالی‌ماندن قیمت تومانی در اندروید همین بود.
+const NOBITEX_STATS_URL = 'https://apiv2.nobitex.ir/market/stats';
 
 const BINANCE_TICKER_URL =
   'https://api.binance.com/api/v3/ticker/24hr?symbols=' +
@@ -69,27 +72,70 @@ function fetchJsonTimeout(url: string, ms: number): Promise<any> {
   ]);
 }
 
+/** POST نوبیتکس — دقیقاً مثل tryNobitexStats خود اپ (Content-Type: json) */
+function postJsonTimeout(url: string, body: object, ms: number): Promise<any> {
+  return Promise.race([
+    fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then((r) => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    }),
+    new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms)),
+  ]);
+}
+
 const num = (v: unknown): number => {
   const n = typeof v === 'number' ? v : parseFloat(String(v ?? ''));
   return Number.isFinite(n) ? n : 0;
 };
 
-/** ——— لایهٔ ۱: نوبیتکس (هر دو قیمت تومانی + پشتیبان دلاری) ——— */
+/** ——— لایهٔ ۱: نوبیتکس (هر دو قیمت تومانی + پشتیبان دلاری) ———
+ *  پاسخ stats با کلید «{src}-{dst}» می‌آید (مثل «btc-rls»، «eth-usdt»).
+ *  مقادیر بازار rls به ریال است (÷۱۰ = تومان)؛ بازار usdt به دلار. */
 async function tryNobitex(): Promise<Omit<CryptoPrices, 'updatedAt'> | null> {
+  const fetchStats = async (src: string, dst: string): Promise<any | null> => {
+    try {
+      const data = await postJsonTimeout(
+        NOBITEX_STATS_URL,
+        { srcCurrency: src, dstCurrency: dst },
+        6000,
+      );
+      return data?.status === 'ok' || data?.stats ? data.stats : null;
+    } catch (e) {
+      console.log(`[CryptoPrices] nobitex ${src}-${dst} failed:`, e);
+      return null;
+    }
+  };
+
   try {
-    const data = await fetchJsonTimeout(NOBITEX_STATS_URL, 6000);
-    const stats = data?.stats;
-    if (!stats?.btc?.rls || !stats?.eth?.rls) return null;
+    // یک درخواست برای هر چهار بازار (btc/eth × rls/usdt)
+    let stats = await fetchStats('btc,eth', 'rls,usdt');
+    // اگر فهرستِ با کاما پذیرفته نشد، جفت‌به‌جفت (۴ درخواست کوتاه)
+    if (!stats?.['btc-rls'] && !stats?.['eth-rls']) {
+      const [bRls, eRls, bUsdt, eUsdt] = await Promise.all([
+        fetchStats('btc', 'rls'),
+        fetchStats('eth', 'rls'),
+        fetchStats('btc', 'usdt'),
+        fetchStats('eth', 'usdt'),
+      ]);
+      stats = { ...bRls, ...eRls, ...bUsdt, ...eUsdt };
+    }
+    if (!stats?.['btc-rls'] && !stats?.['eth-rls']) return null;
+
+    const pick = (mkt: any): number => num(mkt?.latest) || num(mkt?.lastTradePrice);
 
     const build = (symbol: 'BTC' | 'ETH'): CryptoPrice | null => {
-      const s = stats[symbol.toLowerCase()];
-      const rlsLatest = num(s?.rls?.latest);
+      const k = symbol.toLowerCase();
+      const rlsLatest = pick(stats![`${k}-rls`]);
       const toman = rlsLatest / 10;
       // sanity: BTC ~ میلیارد تومان، ETH ~ صدها میلیون تومان
       const tomanOk =
         symbol === 'BTC' ? toman > 1e9 && toman < 1e12 : toman > 1e7 && toman < 1e11;
       if (!tomanOk) return null;
-      const usdtLatest = num(s?.usdt?.latest);
+      const usdtLatest = pick(stats![`${k}-usdt`]);
       // sanity دلاری
       const usdOk =
         symbol === 'BTC'
@@ -98,9 +144,9 @@ async function tryNobitex(): Promise<Omit<CryptoPrices, 'updatedAt'> | null> {
       return {
         symbol,
         usd: usdOk ? usdtLatest : 0,
-        usdChangePct: usdOk ? num(s?.usdt?.dayChange) : 0,
+        usdChangePct: usdOk ? num(stats![`${k}-usdt`]?.dayChange) : 0,
         toman,
-        tomanChangePct: num(s?.rls?.dayChange),
+        tomanChangePct: num(stats![`${k}-rls`]?.dayChange),
         updatedAt: Date.now(),
         usdSource: usdOk ? 'Nobitex' : '',
       };
@@ -108,8 +154,21 @@ async function tryNobitex(): Promise<Omit<CryptoPrices, 'updatedAt'> | null> {
 
     const btc = build('BTC');
     const eth = build('ETH');
-    if (!btc || !eth) return null;
-    return { btc, eth, usdSource: btc.usdSource || eth.usdSource ? 'Nobitex' : '' };
+    if (!btc && !eth) return null;
+    const emptyZero = (symbol: 'BTC' | 'ETH'): CryptoPrice => ({
+      symbol,
+      usd: 0,
+      usdChangePct: 0,
+      toman: 0,
+      tomanChangePct: 0,
+      updatedAt: Date.now(),
+      usdSource: '',
+    });
+    return {
+      btc: btc ?? emptyZero('BTC'),
+      eth: eth ?? emptyZero('ETH'),
+      usdSource: btc?.usdSource || eth?.usdSource ? 'Nobitex' : '',
+    };
   } catch (e) {
     console.log('[CryptoPrices] nobitex failed:', e);
     return null;

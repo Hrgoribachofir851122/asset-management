@@ -23,6 +23,12 @@ interface DropdownPickerProps {
   showLabelOnBar?: boolean;
   /** v1.4.0 — رنگ پس‌زمینهٔ نوار بسته (پیش‌فرض inputBg) */
   triggerBackgroundColor?: string;
+  /**
+   * v1.5.1 — برچسب به‌صورت «سرتیتر» بالای منو می‌آید (متن کامل و خوانا،
+   * بیرون از نوار) و نوارِ بسته فقط «مقدار انتخاب‌شده + فلش» را نشان می‌دهد
+   * — دید بهتر: عنوان یک‌بار بالا، انتخاب داخل کادر خودش.
+   */
+  labelAsHeader?: boolean;
 }
 
 export default function DropdownPicker({
@@ -33,22 +39,24 @@ export default function DropdownPicker({
   testID,
   showLabelOnBar = false,
   triggerBackgroundColor,
+  labelAsHeader = false,
 }: DropdownPickerProps) {
   const [open, setOpen] = useState(false);
   const selectedLabel = options.find((o) => o.key === value)?.label ?? value;
 
   return (
     <>
+      {labelAsHeader && <Text style={styles.headerLabel}>{label}</Text>}
       <Pressable
         style={[
           styles.dropdownTrigger,
-          showLabelOnBar && styles.dropdownTriggerRtl,
+          showLabelOnBar && !labelAsHeader && styles.dropdownTriggerRtl,
           triggerBackgroundColor ? { backgroundColor: triggerBackgroundColor } : null,
         ]}
         onPress={() => setOpen(true)}
         testID={testID}
       >
-        {showLabelOnBar && (
+        {showLabelOnBar && !labelAsHeader && (
           <Text style={styles.dropdownBarLabel} numberOfLines={1}>
             {label}
           </Text>
@@ -103,6 +111,14 @@ const styles = createThemedStyles(() => StyleSheet.create({
     paddingVertical: 14,
     borderWidth: 1,
     borderColor: colors.dark.border,
+  },
+  // v1.5.1 — سرتیترِ بالای منو (حالت labelAsHeader): عنوان کامل و خوانا
+  headerLabel: {
+    fontSize: 13,
+    fontWeight: '700' as const,
+    color: colors.dark.accent,
+    textAlign: 'right',
+    marginBottom: 6,
   },
   dropdownTriggerText: {
     fontSize: 14,

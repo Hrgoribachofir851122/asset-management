@@ -5,11 +5,12 @@
  * (PriceBoard — all live prices incl. dual USD/Toman BTC & ETH), then
  * «مدیریت دارایی» (the wallet screen) and «تنظیمات».
  *
+ * v1.5.1 — the app now OPENS on «قیمت‌ها» (user request): live prices are
+ * the first thing you see; مدیریت دارایی stays one tap away.
+ *
  * Under RTL (Persian devices) the FIRST declared tab renders at the far
  * RIGHT — so this declaration order produces, right → left:
  *     قیمت‌ها ← مدیریت دارایی ← تنظیمات
- * The app still opens on «مدیریت دارایی» (initialRouteName) so the user's
- * startup screen does not change; «قیمت‌ها» is the first tab in the bar.
  *
  * The tab bar is themed manually (lucide icons + live colors.dark palette)
  * exactly like the original Pampi tabs layout.
@@ -37,7 +38,7 @@ export default function TabsLayout() {
         },
         sceneStyle: { backgroundColor: colors.dark.background },
       }}
-      initialRouteName="wallet"
+      initialRouteName="prices/index"
     >
       <Tabs.Screen
         name="prices/index"

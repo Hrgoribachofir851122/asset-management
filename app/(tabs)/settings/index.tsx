@@ -489,7 +489,7 @@ function PriceAlertCard() {
             value={String(cfg.coinPct)}
             options={COIN_THRESHOLD_OPTIONS}
             onSelect={(key) => void handleThreshold({ coinPct: Number(key) })}
-            showLabelOnBar
+            labelAsHeader
             triggerBackgroundColor={colors.dark.background}
             testID="price-alert-coin-threshold"
           />
@@ -498,17 +498,18 @@ function PriceAlertCard() {
             value={String(cfg.metalPct)}
             options={METAL_THRESHOLD_OPTIONS}
             onSelect={(key) => void handleThreshold({ metalPct: Number(key) })}
-            showLabelOnBar
+            labelAsHeader
             triggerBackgroundColor={colors.dark.background}
             testID="price-alert-metal-threshold"
           />
           {/* v1.4.2 — تکرار اعلان: برای وقتی که اعلان اول را ندیدی */}
+          {/* v1.5.1 — عنوان = سرتیتر بالای منو؛ داخل منو فقط انتخاب زمان */}
           <DropdownPicker
             label="🔁 تکرار اعلان تا دیدن (تا وقتی سیگنال برقرار است):"
             value={String(cfg.repeatHours)}
             options={REPEAT_HOURS_OPTIONS}
             onSelect={(key) => void handleThreshold({ repeatHours: Number(key) })}
-            showLabelOnBar
+            labelAsHeader
             triggerBackgroundColor={colors.dark.background}
             testID="price-alert-repeat"
           />

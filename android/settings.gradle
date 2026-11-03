@@ -1,4 +1,13 @@
 pluginManagement {
+  // v1.4.2 — آینه‌ها اول (maven central گاهی 429 می‌دهد؛ اینجا فقط برای
+  // رزولوشن پلاگین‌های settings است و روی کاربر نهایی اثری ندارد)
+  repositories {
+    maven { url 'https://maven-central.storage-download.googleapis.com/maven2' }
+    maven { url 'https://maven.aliyun.com/repository/central' }
+    gradlePluginPortal()
+    google()
+    mavenCentral()
+  }
   def reactNativeGradlePlugin = new File(
     providers.exec {
       workingDir(rootDir)

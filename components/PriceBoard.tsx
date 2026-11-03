@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, Pressable } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, Pressable, Image } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Landmark, RefreshCw } from 'lucide-react-native';
 import colors from '@/constants/colors';
@@ -287,10 +287,22 @@ function PriceChip({
 }
 
 // ── v1.5.0 — کادر دوعملهٔ بیت‌کوین/اتریوم (دلاری + تومانی در یک کادر) ──
+// v1.5.1 — آیکون باندل‌شدهٔ محلی (بدون سرور و بدون لود؛ مثل بقیهٔ بخش‌ها)
 
-const COIN_META: Record<'BTC' | 'ETH', { name: string; sub: string; badge: string; color: string }> = {
-  BTC: { name: 'بیت‌کوین', sub: 'BTC / USDT', badge: '₿', color: '#F7931A' },
-  ETH: { name: 'اتریوم', sub: 'ETH / USDT', badge: 'Ξ', color: '#627EEA' },
+const COIN_META: Record<
+  'BTC' | 'ETH',
+  { name: string; sub: string; icon: number }
+> = {
+  BTC: {
+    name: 'بیت‌کوین',
+    sub: 'BTC / USDT',
+    icon: require('@/assets/images/coin-btc.png'),
+  },
+  ETH: {
+    name: 'اتریوم',
+    sub: 'ETH / USDT',
+    icon: require('@/assets/images/coin-eth.png'),
+  },
 };
 
 function CryptoBox({ coin, loading }: { coin?: CryptoPrice; loading: boolean }) {
@@ -307,9 +319,7 @@ function CryptoBox({ coin, loading }: { coin?: CryptoPrice; loading: boolean }) 
   return (
     <View style={styles.cryptoBox}>
       <View style={styles.cryptoHead}>
-        <View style={[styles.cryptoBadge, { backgroundColor: meta.color + '26', borderColor: meta.color + '66' }]}>
-          <Text style={[styles.cryptoBadgeText, { color: meta.color }]}>{meta.badge}</Text>
-        </View>
+        <Image source={meta.icon} style={styles.cryptoBadgeImg} />
         <View style={styles.cryptoNames}>
           <Text style={styles.cryptoName}>{meta.name}</Text>
           <Text style={styles.cryptoSub}>{meta.sub}</Text>
@@ -598,17 +608,11 @@ const styles = createThemedStyles(() =>
       gap: 8,
       marginBottom: 8,
     },
-    cryptoBadge: {
-      width: 32,
-      height: 32,
-      borderRadius: 16,
-      borderWidth: 1,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    cryptoBadgeText: {
-      fontSize: 16,
-      fontWeight: '800' as const,
+    // v1.5.1 — آیکون محلی باندل‌شده (بدون سرور)
+    cryptoBadgeImg: {
+      width: 34,
+      height: 34,
+      borderRadius: 17,
     },
     cryptoNames: {
       flex: 1,
