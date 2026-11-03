@@ -18,10 +18,6 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import colors from '@/constants/colors';
 import { createThemedStyles } from '@/utils/themeStyles';
-// v1.4.0/1.4.1 — چشمک‌زن رشد/ریزش: overlay داخل چیپ (چیدمان دست‌نخورده)
-// v1.4.2 — GroupBlinkFrame: کادر چشمک‌زن دور کل کارت فلزات وقتی چیپی سیگنال دارد
-import { BlinkOverlay, GroupBlinkFrame } from '@/components/BlinkFrame';
-import { useGrowthBlink } from '@/utils/growthSignals';
 import {
   fetchIranMarketPrices,
   parseTomanInput,
@@ -31,40 +27,34 @@ import {
 } from '@/utils/iranMarketApi';
 import { formatToman } from '@/utils/nobitexApi';
 import {
-  isGlobalGoldMarketOpen,
-  globalGoldMarketLabel,
-} from '@/utils/globalMarketHours';
-import {
   fetchTgjuCloses,
   closeAtOrBefore,
   latestClose,
   TgjuHistorySymbol,
   TgjuClosePoint,
 } from '@/utils/tgjuHistoryApi';
-import { fetchTalineGold, clearTalineGoldMemoryCache } from '@/utils/talineApi';
 
 /**
- * LocalAssetsSection — v1.4.16
+ * LocalAssetsSection — v1.5.0 (simplified, user-approved plan)
  *
- * «دارایی ریالی و فلزات» tab of the wallet:
- *  - Live Iranian prices (Toman): gold 18/24 per gram, silver 999/925 per
- *    gram, Emami/Bahar/half/quarter coins, the free-market USD rate and the
- *    tether price (passed in from the portfolio card — same source).
- *  - v1.4.16 NEW ORDER (user-requested): قیمت‌های لحظه‌ای → مجموع کل →
- *    کارت سود/زیان → «دارایی‌های من» (collapsible with its own arrow).
- *    The grand total is ALWAYS visible at the top (right under the prices)
- *    and now includes the read-only blockchain wallets (4th tab) — as does
- *    the PnL card (dedicated «کیف پول بلاکچین» row).
- *  - User inputs: Rial cash, paper-USD cash (v1.4.15), gold grams (+karat),
- *    silver grams (+type), coin counts — persisted in AsyncStorage.
+ * «دارایی ریالی و فلزات» card of the wallet page:
+ *  - v1.5.0 — the live price grid AND the taline buy/sell card MOVED to the
+ *    new first tab «قیمت‌ها» (components/PriceBoard.tsx). This card keeps
+ *    the exact same remaining order as before: مجموع کل → کارت سود/زیان →
+ *    «دارایی‌های من» (collapsible). Live prices are still fetched here
+ *    (same queryKey, shared react-query cache) because the PnL card and
+ *    the per-row hints need them.
+ *  - Live Iranian prices (Toman) power the PnL card + value hints: gold
+ *    18/24, silver 999/925, coins, free-market USD (TGJU) + tether.
+ *  - User inputs: Rial cash, paper-USD cash, manual tether, gold grams
+ *    (+karat), silver grams (+type), coin counts — persisted in AsyncStorage.
  *  - EVERY asset row shows its own Toman value next to it.
  *  - Grand total = Rial + USD cash + gold + silver + coins + crypto (crypto
  *    USD value comes from the wallet's first header, converted at the live
- *    tether rate) + blockchain wallets (toman, v1.4.16).
- *  - v1.4.14 — PnL card with ۷/۳۰/۹۰/۱۸۰-day timeframes: the daily-close
- *    history of every HELD asset is fetched from TGJU's public history API
- *    and compared against the live price (realized market PnL of the metal
- *    holdings — independent of when the user actually bought them).
+ *    tether rate) + blockchain wallets.
+ *  - PnL card with ۷/۳۰/۹۰/۱۸۰-day timeframes: the daily-close history of
+ *    every HELD asset is fetched from TGJU's public history API and compared
+ *    against the live price (market PnL — independent of purchase date).
  */
 
 const ASSETS_KEY = '@local_assets_v1';
@@ -143,15 +133,6 @@ export default function LocalAssetsSection({
   const [assets, setAssets] = useState<LocalAssets>(EMPTY_ASSETS);
   // v1.4.16 — «دارایی‌های من» collapsible with its own arrow; persisted.
   const [expanded, setExpanded] = useState(true);
-  // v1.1.0 — باز/بسته بودن بازار جهانی طلا (برای رنگ انس/دلار/طلای ۱۸)؛
-  // هر ۶۰ ثانیه دوباره ارزیابی می‌شود تا گذر از مرز باز/بسته دیده شود.
-  const [goldMarketTick, setGoldMarketTick] = useState(0);
-  useEffect(() => {
-    const timer = setInterval(() => setGoldMarketTick((t) => t + 1), 60_000);
-    return () => clearInterval(timer);
-  }, []);
-  const goldMarketOpen = useMemo(() => isGlobalGoldMarketOpen(), [goldMarketTick]);
-  const goldMarketText = useMemo(() => globalGoldMarketLabel(), [goldMarketTick]);
   const queryClient = useQueryClient();
 
   useEffect(() => {
@@ -183,18 +164,6 @@ export default function LocalAssetsSection({
   });
   const p = pricesQuery.data;
 
-  // v1.3.7 — «قیمت خرید و فروش هر گرم طلای آب‌شده از طلاین» — نرخ لحظه‌ایِ
-  // taline.ir بدون نیاز به سرور: ۵ لایهٔ موازی (کانال رسمی طلاین مستقیم +
-  // سه آینهٔ عمومی + سرور/سایت) و کش stale — مثل بقیهٔ قیمت‌های لحظه‌ای.
-  // با همان ریتم ۵ دقیقه‌ای قیمت‌ها خودکار تازه می‌شود.
-  const talineQuery = useQuery({
-    queryKey: ['taline-gold'],
-    queryFn: fetchTalineGold,
-    refetchInterval: 5 * 60 * 1000,
-    staleTime: 60 * 1000,
-  });
-  const taline = talineQuery.data;
-
   const update = useCallback((patch: Partial<LocalAssets>) => {
     setAssets((prev) => {
       const next = { ...prev, ...patch };
@@ -206,10 +175,9 @@ export default function LocalAssetsSection({
   const refresh = useCallback(() => {
     // v1.2.0 — «رفرش یک‌بار کار می‌کند دفعهٔ دوم نه»: اول کشِ ۶۰ ثانیه‌ای حافظه
     // خالی می‌شود تا invalidate واقعاً یک درخواست تازه بزند، نه برگرداندن همان کش.
+    // (قیمت‌ها برای کارت PnL و امضای ردیف‌ها لازم‌اند؛ جدول قیمت‌ها در تب «قیمت‌ها»ست.)
     clearIranMarketMemoryCache();
-    clearTalineGoldMemoryCache();
     queryClient.invalidateQueries({ queryKey: ['iran-market-prices'] });
-    queryClient.invalidateQueries({ queryKey: ['taline-gold'] });
   }, [queryClient]);
 
   // ── computed Toman values (each asset separately) ──
@@ -252,14 +220,8 @@ export default function LocalAssetsSection({
     totalPortfolioUsd > 0 ||
     (hasBlockchainWallet && blockchainToman > 0);
 
-  const minutesOld = p ? Math.max(1, Math.round((Date.now() - p.updatedAt) / 60000)) : 0;
-  // v1.3.6 — عمر نرخ طلاین (برای پانویس کارت خرید/فروش)
-  const talineMinutes = taline ? Math.max(1, Math.round((Date.now() - taline.updatedAt) / 60000)) : 0;
-
   return (
-    <GroupBlinkFrame group="metals" style={styles.card} borderRadius={16}>
-    {/* v1.4.2 — وقتی هر چیپ فلزات/دلار سیگنال رشد/ریزش بگیرد، دور کل کارت
-        هم کادر چشمک‌زن (تک‌رنگ یا دورنگ به‌تناسب) می‌آید */}
+    <View style={styles.card}>
       {/* ── header ── */}
       <View style={styles.header}>
         <Landmark size={18} color={colors.dark.accent} />
@@ -280,99 +242,7 @@ export default function LocalAssetsSection({
         </Pressable>
       </View>
 
-      {/* ── live price list ── */}
-      <View style={styles.priceBlock}>
-        <Text style={styles.blockLabel}>قیمت‌های لحظه‌ای</Text>
-        <View style={styles.priceGrid}>
-          {/* v1.1.0 — انس: بازار باز → سبز، بازار بسته → قرمز (درخواست کاربر) */}
-          <PriceChip
-            label="انس جهانی طلا ($)"
-            value={p?.goldOunceUsd}
-            usd
-            tone={goldMarketOpen ? 'open' : 'closed'}
-          />
-          {/* با بازارِ باز این کادرها با رنگ متمایز (سبز) بهتر دیده می‌شوند */}
-          <PriceChip label="طلای ۱۸ عیار (گرم)" value={p?.gold18} tone="open" blinkKey="metal:geram18" />
-          <PriceChip label="طلای ۲۴ عیار (گرم)" value={p?.gold24} blinkKey="metal:geram24" />
-          <PriceChip label="نقره ۹۹۹ (گرم)" value={p?.silver999} />
-          <PriceChip label="نقره ۹۲۵ (گرم)" value={p?.silver925} />
-          <PriceChip label="سکه امامی" value={p?.coinEmami} blinkKey="metal:sekee" />
-          <PriceChip label="سکه بهار آزادی" value={p?.coinBahar} blinkKey="metal:sekee_bahar" />
-          <PriceChip label="نیم سکه" value={p?.coinNim} />
-          <PriceChip label="ربع سکه" value={p?.coinRob} />
-          <PriceChip label="دلار آزاد" value={p?.dollar} tone="open" blinkKey="metal:price_dollar_rl" />
-          <PriceChip
-            label="تتر"
-            value={usdtToToman > 0 ? usdtToToman : undefined}
-          />
-        </View>
-        {/* v1.1.0 — وضعیت بازار جهانی طلا، کنار همین قیمت‌ها */}
-        <View style={styles.marketStatusRow}>
-          <View
-            style={[
-              styles.marketStatusDot,
-              { backgroundColor: goldMarketOpen ? colors.dark.green : colors.dark.red },
-            ]}
-          />
-          <Text
-            style={[
-              styles.marketStatusText,
-              { color: goldMarketOpen ? colors.dark.green : colors.dark.red },
-            ]}
-          >
-            {goldMarketText.text}
-          </Text>
-          {!goldMarketOpen && (
-            <Text style={styles.marketStatusHint}>— قیمت انس تا باز‌شدن بازار تغییر نمی‌کند</Text>
-          )}
-        </View>
-        {p && (
-          <Text style={styles.priceNote}>منبع: TGJU • {minutesOld} دقیقه پیش</Text>
-        )}
-        {!p && !pricesQuery.isFetching && (
-          <Text style={styles.priceNote}>قیمت‌ها در دسترس نیست — بعداً تازه‌سازی کنید</Text>
-        )}
-
-        {/* v1.3.6 — خرید/فروش هر گرم طلای آب‌شده از طلاین (طرح تأییدشده:
-            کادر سبز خرید، کادر قرمز فروش، زیر قیمت‌های لحظه‌ای) */}
-        <View style={styles.talineCard}>
-          <View style={styles.talineHeader}>
-            <View style={styles.talineBadge}>
-              <Text style={styles.talineBadgeText}>ط</Text>
-            </View>
-            <Text style={styles.talineTitle}>
-              قیمت خرید و فروش هر گرم طلای آب‌شده از سایت taline.ir
-            </Text>
-          </View>
-          <View style={styles.talineRow}>
-            <View style={[styles.talineBox, styles.talineBoxBuy]}>
-              <Text style={styles.talineBoxLabel}>قیمت خرید هر گرم</Text>
-              <Text style={[styles.talineBoxValue, { color: colors.dark.green }]}>
-                {taline?.buy ? formatFullToman(taline.buy) : '…'}
-              </Text>
-              <Text style={styles.talineBoxUnit}>تومان</Text>
-            </View>
-            <View style={[styles.talineBox, styles.talineBoxSell]}>
-              <Text style={styles.talineBoxLabel}>قیمت فروش هر گرم</Text>
-              <Text style={[styles.talineBoxValue, { color: colors.dark.red }]}>
-                {taline?.sell ? formatFullToman(taline.sell) : '…'}
-              </Text>
-              <Text style={styles.talineBoxUnit}>تومان</Text>
-            </View>
-          </View>
-          <Text style={styles.talineNote}>
-            {taline
-              ? `تازه‌سازی خودکار همراه با قیمت‌ها • ${
-                  talineMinutes <= 3 ? 'لحظه‌ای' : `${talineMinutes} دقیقه پیش`
-                }`
-              : talineQuery.isFetching
-                ? 'در حال دریافت قیمت طلایین…'
-                : 'قیمت طلایین موقتاً در دسترس نیست — بعداً تازه‌سازی کنید'}
-          </Text>
-        </View>
-      </View>
-
-      {/* ── v1.4.16: مجموع کل — بالا، درست زیر قیمت‌های لحظه‌ای (همیشه نمایان) ── */}
+      {/* ── v1.4.16: مجموع کل — بالا (همیشه نمایان) ── */}
       <View style={styles.totalBox}>
         <View style={styles.totalRow}>
           <TrendingUp size={16} color={colors.dark.green} />
@@ -615,7 +485,7 @@ export default function LocalAssetsSection({
           )}
         </>
       )}
-    </GroupBlinkFrame>
+    </View>
   );
 }
 
@@ -903,64 +773,6 @@ function LocalAssetsPnl({
 
 // ── sub-components ──
 
-function PriceChip({
-  label,
-  value,
-  usd,
-  tone,
-  blinkKey,
-}: {
-  label: string;
-  value?: number;
-  usd?: boolean;
-  /** v1.1.0 — 'open' سبز (بازار باز)، 'closed' قرمز (بازار بسته — فقط انس) */
-  tone?: 'open' | 'closed';
-  /** v1.4.0 — کلید چشمک‌زن رشد/ریزش (فقط برای دارایی‌های تحت‌نظر اعلان) */
-  blinkKey?: string | null;
-}) {
-  // v1.5.12 — «قیمت انس جهانی طلا» دلاری است؛ بقیه تومانی.
-  const text =
-    value && value > 0
-      ? usd
-        ? `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-        : formatFullToman(value)
-      : '…';
-  // v1.4.1 — چشمک‌زن به‌صورت overlay داخل خود چیپ (نه wrapper) تا چیدمان
-  // شبکهٔ قیمت‌های لحظه‌ای — همان اندازه‌های یکنواخت قبل — دست‌نخورده بماند.
-  // v1.4.2 — چیپ‌ها عضو گروه «metals» (کادر دور کل کارت) + ضخامت متغیر
-  const { state: blinkState, strength: blinkStrength } = useGrowthBlink(
-    blinkKey ?? null,
-    value ?? 0,
-    null,
-    { group: 'metals' },
-  );
-  return (
-    <View
-      style={[
-        styles.priceChip,
-        tone === 'open' && styles.priceChipOpen,
-        tone === 'closed' && styles.priceChipClosed,
-        blinkKey ? styles.priceChipHost : null,
-      ]}
-    >
-      <Text style={styles.priceChipLabel}>{label}</Text>
-      <Text
-        style={[
-          styles.priceChipValue,
-          !value && styles.priceChipEmpty,
-          tone === 'open' && styles.priceChipValueOpen,
-          tone === 'closed' && styles.priceChipValueClosed,
-        ]}
-      >
-        {text}
-      </Text>
-      {blinkKey ? (
-        <BlinkOverlay state={blinkState} strength={blinkStrength} borderRadius={8} />
-      ) : null}
-    </View>
-  );
-}
-
 interface AssetRowProps {
   icon: React.ReactNode;
   label: string;
@@ -1101,169 +913,6 @@ const styles = createThemedStyles(() =>
       color: colors.dark.textSecondary,
       marginBottom: 8,
       textAlign: 'right',
-    },
-    priceBlock: {
-      backgroundColor: colors.dark.card,
-      borderRadius: 10,
-      padding: 10,
-    },
-    priceGrid: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: 6,
-    },
-    priceChip: {
-      flexBasis: '31%',
-      flexGrow: 1,
-      backgroundColor: colors.dark.surface,
-      borderRadius: 8,
-      paddingVertical: 8,
-      paddingHorizontal: 6,
-      alignItems: 'center',
-      borderWidth: 1,
-      borderColor: colors.dark.border,
-    },
-    // v1.1.0 — کادرهای متمایز (بازار باز → سبز / بسته → قرمز)
-    priceChipOpen: {
-      borderColor: colors.dark.green + '66',
-      backgroundColor: colors.dark.greenDim,
-    },
-    priceChipClosed: {
-      borderColor: colors.dark.red + '66',
-      backgroundColor: colors.dark.redDim,
-    },
-    priceChipLabel: {
-      fontSize: 10,
-      color: colors.dark.textSecondary,
-      textAlign: 'center',
-    },
-    // v1.5.12 — «فونت متن و اعداد قیمت‌های لحظه‌ای را برای خوانایی بیشتر
-    // بزرگتر کن» — ۱۱ → ۱۴.۵ (ضخیم‌تر) + لیبل ۹ → ۱۰.
-    priceChipValue: {
-      fontSize: 14.5,
-      fontWeight: '800' as const,
-      color: colors.dark.text,
-      marginTop: 2,
-    },
-    // v1.4.1 — میزبان overlay چشمک‌زن داخل خود چیپ
-    priceChipHost: {
-      position: 'relative',
-    },
-    priceChipEmpty: {
-      color: colors.dark.textSecondary,
-      fontWeight: '400' as const,
-    },
-    // v1.1.0 — رنگ مقدار: باز → سبز، بسته → قرمز
-    priceChipValueOpen: {
-      color: colors.dark.green,
-    },
-    priceChipValueClosed: {
-      color: colors.dark.red,
-    },
-    // v1.1.0 — خط وضعیت بازار جهانی طلا زیر قیمت‌های لحظه‌ای
-    marketStatusRow: {
-      flexDirection: 'row-reverse',
-      alignItems: 'center',
-      gap: 6,
-      marginTop: 8,
-      flexWrap: 'wrap',
-    },
-    marketStatusDot: {
-      width: 8,
-      height: 8,
-      borderRadius: 4,
-    },
-    marketStatusText: {
-      fontSize: 11,
-      fontWeight: '700' as const,
-    },
-    marketStatusHint: {
-      fontSize: 10,
-      color: colors.dark.textMuted,
-    },
-    priceNote: {
-      fontSize: 9,
-      color: colors.dark.textSecondary,
-      marginTop: 6,
-      textAlign: 'left',
-    },
-    // v1.3.6 — کارت خرید/فروش هر گرم طلای آب‌شده از طلاین (تأییدشده در پیش‌نمایش)
-    talineCard: {
-      marginTop: 10,
-      backgroundColor: colors.dark.surface,
-      borderRadius: 10,
-      borderWidth: 1,
-      borderColor: colors.dark.border,
-      padding: 10,
-    },
-    talineHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-      marginBottom: 8,
-    },
-    talineBadge: {
-      width: 22,
-      height: 22,
-      borderRadius: 11,
-      backgroundColor: colors.dark.accent + '26',
-      borderWidth: 1,
-      borderColor: colors.dark.accent + '66',
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    talineBadgeText: {
-      fontSize: 12,
-      fontWeight: '800' as const,
-      color: colors.dark.accent,
-    },
-    talineTitle: {
-      flex: 1,
-      fontSize: 11.5,
-      fontWeight: '700' as const,
-      color: colors.dark.textSecondary,
-      textAlign: 'right',
-    },
-    talineRow: {
-      flexDirection: 'row',
-      gap: 8,
-    },
-    talineBox: {
-      flex: 1,
-      borderRadius: 10,
-      borderWidth: 1,
-      alignItems: 'center',
-      paddingVertical: 10,
-      paddingHorizontal: 6,
-    },
-    talineBoxBuy: {
-      borderColor: colors.dark.green + '73', // rgba(14,203,129,.45)
-      backgroundColor: colors.dark.green + '1A', // rgba(14,203,129,.10)
-    },
-    talineBoxSell: {
-      borderColor: colors.dark.red + '73', // rgba(246,70,93,.45)
-      backgroundColor: colors.dark.red + '1A', // rgba(246,70,93,.10)
-    },
-    talineBoxLabel: {
-      fontSize: 10.5,
-      color: colors.dark.textSecondary,
-      textAlign: 'center',
-    },
-    talineBoxValue: {
-      fontSize: 15.5,
-      fontWeight: '800' as const,
-      marginTop: 3,
-    },
-    talineBoxUnit: {
-      fontSize: 9.5,
-      color: colors.dark.textSecondary,
-      marginTop: 2,
-    },
-    talineNote: {
-      fontSize: 9,
-      color: colors.dark.textMuted,
-      marginTop: 8,
-      textAlign: 'center',
     },
     divider: {
       height: 1,
