@@ -424,7 +424,8 @@ const styles = createThemedStyles(() =>
       fontWeight: '800' as const,
       color: colors.dark.accent,
       marginBottom: 8,
-      textAlign: 'right',
+      // v1.6.0 — سرتیتر بخش‌ها به سمت مخالف (چپ) منتقل شد به درخواست کاربر
+      textAlign: 'left',
     },
     priceBlock: {
       backgroundColor: colors.dark.card,
