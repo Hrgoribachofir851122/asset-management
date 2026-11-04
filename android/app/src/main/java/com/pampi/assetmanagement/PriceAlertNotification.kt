@@ -25,6 +25,8 @@ import androidx.core.app.NotificationCompat
 object PriceAlertNotification {
     const val CHANNEL_RISE = "price_alert_rise"
     const val CHANNEL_FALL = "price_alert_fall"
+    /** v1.8.0 — کانال مستقل «اعلان بروزرسانی برنامه» (کاربر می‌تواند جدا خاموشش کند) */
+    const val CHANNEL_UPDATE = "app_updates"
     private const val GROUP_KEY = "com.pampi.assetmanagement.PRICE_ALERT"
 
     fun ensureChannels(ctx: Context) {
@@ -38,6 +40,11 @@ object PriceAlertNotification {
             nm.createNotificationChannel(
                 NotificationChannel(CHANNEL_FALL, "اعلان ریزش قیمت", NotificationManager.IMPORTANCE_HIGH).apply {
                     description = "ریزش قیمت دارایی‌های کیف پول، صرافی، طلا و دلار"
+                },
+            )
+            nm.createNotificationChannel(
+                NotificationChannel(CHANNEL_UPDATE, "اعلان بروزرسانی برنامه", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                    description = "وقتی نسخهٔ جدیدی از برنامه منتشر شود خبر می‌دهد (هر نسخه فقط یک‌بار)"
                 },
             )
         }
@@ -82,6 +89,53 @@ object PriceAlertNotification {
             nm.notify(alertId.hashCode(), builder.build())
         } catch (_: SecurityException) {
             // اجازهٔ نوتیفیکیشن داده نشده (اندروید ۱۳+) — بی‌صدا رد می‌شود
+        }
+    }
+
+    /**
+     * v1.8.0 — اعلان «نسخهٔ جدید منتشر شد». IMPORTANCE_DEFAULT (بالای
+     * صفحه نمی‌پرد؛ در شید و نوار وضعیت می‌نشیند) + زرد accent برنامه.
+     * برمی‌گرداند: اعلان واقعاً پست شد؟ (مبنای ثبت «notified» در UpdateNotify)
+     */
+    fun postUpdate(ctx: Context, versionFa: String, note: String?): Boolean {
+        ensureChannels(ctx)
+        val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val launch = ctx.packageManager.getLaunchIntentForPackage(ctx.packageName)
+        val pi = PendingIntent.getActivity(
+            ctx, "app_update".hashCode(), launch,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val largeIcon = try {
+            BitmapFactory.decodeResource(ctx.resources, R.drawable.ic_logo_mirror)
+                ?: BitmapFactory.decodeResource(ctx.resources, R.drawable.ic_logo_round)
+        } catch (_: Exception) {
+            try {
+                BitmapFactory.decodeResource(ctx.resources, R.drawable.ic_logo_round)
+            } catch (_: Exception) { null }
+        }
+        val text = "نسخهٔ $versionFa منتشر شد" +
+            (note?.let { " — $it" } ?: " — برنامه را باز کنید تا تازه‌ها و دکمهٔ دانلود را ببینید")
+        val builder = if (Build.VERSION.SDK_INT >= 26) {
+            NotificationCompat.Builder(ctx, CHANNEL_UPDATE)
+        } else {
+            @Suppress("DEPRECATION")
+            NotificationCompat.Builder(ctx)
+        }
+        builder.setSmallIcon(R.drawable.ic_notification)
+            .setColor(0xFFFCD535.toInt())
+            .setContentTitle("🔔 نسخهٔ جدید مدیریت دارایی")
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setAutoCancel(true)
+            .setContentIntent(pi)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setCategory(NotificationCompat.CATEGORY_STATUS)
+        largeIcon?.let { builder.setLargeIcon(it) }
+        return try {
+            nm.notify("app_update".hashCode(), builder.build())
+            true
+        } catch (_: SecurityException) {
+            false
         }
     }
 }

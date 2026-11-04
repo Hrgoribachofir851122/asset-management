@@ -16,7 +16,12 @@
       <data android:scheme="https"/>
     </intent>
   </queries>
-  <application android:name=".MainApplication" android:label="@string/app_name" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round" android:allowBackup="true" android:theme="@style/AppTheme" android:supportsRtl="true" android:enableOnBackInvokedCallback="false">
+  <!-- v1.8.0 — قفل جهت چیدمان: supportsRtl=false یعنی اندروید هیچ‌وقت
+       برنامه را با لوکال فارسی آینه نمی‌کند (شیائومی فارسی: چیدمان چپ‌چین
+       می‌شد). راست‌چینی همهٔ متن‌ها در کد با استایل صریح انجام می‌شود، پس
+       چه زبان گوشی فارسی چه انگلیسی، چیدمان دقیقاً یکسان و راست‌چین است —
+       همسان با نسخهٔ وب. (کد JS هم در _layout.tsx همان قفل را دارد.) -->
+  <application android:name=".MainApplication" android:label="@string/app_name" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round" android:allowBackup="true" android:theme="@style/AppTheme" android:supportsRtl="false" android:enableOnBackInvokedCallback="false">
     <meta-data android:name="expo.modules.updates.ENABLED" android:value="false"/>
     <meta-data android:name="expo.modules.updates.EXPO_UPDATES_CHECK_ON_LAUNCH" android:value="ALWAYS"/>
     <meta-data android:name="expo.modules.updates.EXPO_UPDATES_LAUNCH_WAIT_MS" android:value="0"/>

@@ -47,6 +47,11 @@ class MainApplication : Application(), ReactApplication {
     if (PriceAlertPrefs.isEnabled(this)) {
       try { PriceAlertWorker.schedulePeriodic(this) } catch (_: Exception) {}
     }
+    // v1.8.0 — اعلان «نسخهٔ جدید» حتی با برنامهٔ بسته: کارگر چک بروزرسانی
+    // همیشه زمان‌بندی می‌شود (مستقل از اعلان قیمت؛ برای همهٔ کاربرها) +
+    // یک چک فوری در همین بازشدن برنامه.
+    try { UpdateCheckWorker.schedulePeriodic(this) } catch (_: Exception) {}
+    try { UpdateCheckWorker.armOnOpen(this) } catch (_: Exception) {}
     DefaultNewArchitectureEntryPoint.releaseLevel = try {
       ReleaseLevel.valueOf(BuildConfig.REACT_NATIVE_RELEASE_LEVEL.uppercase())
     } catch (e: IllegalArgumentException) {
