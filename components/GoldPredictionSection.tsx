@@ -113,6 +113,9 @@ export default function GoldPredictionSection() {
       {/* ── IME prediction card ── */}
       <View style={styles.imeCard}>
         <View style={styles.imeTop}>
+          <Pressable style={styles.editBtn} onPress={() => setManualOpen(true)} hitSlop={6}>
+            <Pencil size={12} color={colors.dark.accent} />
+          </Pressable>
           <Landmark size={16} color={colors.dark.accent} />
           <Text style={styles.imeTitle}>آتی شمش طلای خام</Text>
           <View style={styles.imeSourceChip}>
@@ -126,9 +129,6 @@ export default function GoldPredictionSection() {
                     : 'cdn.ime.co.ir'}
             </Text>
           </View>
-          <Pressable style={styles.editBtn} onPress={() => setManualOpen(true)} hitSlop={6}>
-            <Pencil size={12} color={colors.dark.accent} />
-          </Pressable>
         </View>
         <Text style={styles.imeSub}>بازار آتی بورس کالای ایران — گروه شمش طلای خام</Text>
 
@@ -214,7 +214,7 @@ export default function GoldPredictionSection() {
             <Text style={[styles.th, { flex: 1.1 }]}>سررسید</Text>
             <Text style={[styles.th, { flex: 1.4 }]}>آتی خام ۹۹۵</Text>
             <Text style={[styles.th, { flex: 1.4 }]}>پیش‌بینی ۱۸ عیار</Text>
-            <Text style={[styles.th, { flex: 0.8, textAlign: 'left' }]}>اختلاف</Text>
+            <Text style={[styles.th, { flex: 0.8, textAlign: 'right' }]}>اختلاف</Text>
           </View>
           {ime.contracts
             .slice()
@@ -251,7 +251,7 @@ export default function GoldPredictionSection() {
                       styles.td,
                       {
                         flex: 0.8,
-                        textAlign: 'left',
+                        textAlign: 'right',
                         color: diff >= 0 ? colors.dark.green : colors.dark.red,
                       },
                     ]}
@@ -430,6 +430,7 @@ const styles = createThemedStyles(() =>
       fontSize: 12.5,
       fontWeight: '600' as const,
       color: colors.dark.textSecondary,
+      textAlign: 'right',
     },
     liveTag: {
       color: colors.dark.green,
@@ -439,6 +440,7 @@ const styles = createThemedStyles(() =>
       fontSize: 14.5,
       fontWeight: '800' as const,
       color: colors.dark.text,
+      textAlign: 'right',
     },
     // ime card
     imeCard: {
@@ -458,6 +460,7 @@ const styles = createThemedStyles(() =>
       fontSize: 14,
       fontWeight: '900' as const,
       color: colors.dark.text,
+      textAlign: 'right',
     },
     imeSourceChip: {
       backgroundColor: colors.dark.surface,
@@ -470,6 +473,7 @@ const styles = createThemedStyles(() =>
       fontSize: 10,
       color: colors.dark.textSecondary,
       fontWeight: '600' as const,
+      textAlign: 'center',
     },
     editBtn: {
       padding: 5,
@@ -493,6 +497,7 @@ const styles = createThemedStyles(() =>
     loadingText: {
       fontSize: 11,
       color: colors.dark.textSecondary,
+      textAlign: 'center',
     },
     errorBox: {
       backgroundColor: colors.dark.card,
@@ -520,6 +525,7 @@ const styles = createThemedStyles(() =>
       fontSize: 11,
       fontWeight: '700' as const,
       color: '#241c04',
+      textAlign: 'center',
     },
     expiryBox: {
       flexDirection: 'row',
@@ -538,11 +544,13 @@ const styles = createThemedStyles(() =>
       fontSize: 11.5,
       fontWeight: '600' as const,
       color: colors.dark.textSecondary,
+      textAlign: 'right',
     },
     expiryValue: {
       fontSize: 14,
       fontWeight: '900' as const,
       color: colors.dark.accent,
+      textAlign: 'right',
     },
     futPriceRow: {
       flexDirection: 'row',
@@ -554,11 +562,13 @@ const styles = createThemedStyles(() =>
       fontWeight: '600' as const,
       color: colors.dark.textSecondary,
       flex: 1,
+      textAlign: 'right',
     },
     futPriceValue: {
       fontSize: 13,
       fontWeight: '700' as const,
       color: colors.dark.text,
+      textAlign: 'right',
     },
     formulaBox: {
       backgroundColor: '#0B0E11',
@@ -586,17 +596,20 @@ const styles = createThemedStyles(() =>
       fontSize: 11.5,
       fontWeight: '800' as const,
       color: '#241c04',
+      textAlign: 'center',
     },
     resultValue: {
       fontSize: 22,
       fontWeight: '900' as const,
       color: '#1a1402',
       marginTop: 2,
+      textAlign: 'center',
     },
     resultUnit: {
       fontSize: 10.5,
       fontWeight: '700' as const,
       color: '#4a3a06',
+      textAlign: 'center',
     },
     deltaRow: {
       flexDirection: 'row',
@@ -613,6 +626,7 @@ const styles = createThemedStyles(() =>
       fontSize: 11.5,
       fontWeight: '800' as const,
       color: colors.dark.green,
+      textAlign: 'center',
     },
     staleNote: {
       fontSize: 10,
@@ -667,6 +681,7 @@ const styles = createThemedStyles(() =>
       fontSize: 11.5,
       fontWeight: '700' as const,
       color: colors.dark.textSecondary,
+      textAlign: 'center',
     },
     note: {
       fontSize: 10,
@@ -685,7 +700,7 @@ const styles = createThemedStyles(() =>
       gap: 8,
     },
     sheetHead: {
-      flexDirection: 'row',
+      flexDirection: 'row-reverse',
       alignItems: 'center',
       justifyContent: 'space-between',
     },
@@ -693,6 +708,7 @@ const styles = createThemedStyles(() =>
       fontSize: 12.5,
       fontWeight: '800' as const,
       color: colors.dark.text,
+      textAlign: 'right',
     },
     sheetHint: {
       fontSize: 10,
@@ -738,6 +754,7 @@ const styles = createThemedStyles(() =>
       fontSize: 10,
       fontWeight: '600' as const,
       color: colors.dark.textSecondary,
+      textAlign: 'center',
     },
     chipTextActive: {
       color: colors.dark.accent,
@@ -760,6 +777,7 @@ const styles = createThemedStyles(() =>
       fontSize: 11,
       fontWeight: '700' as const,
       color: colors.dark.textSecondary,
+      textAlign: 'center',
     },
     sheetSaveBtn: {
       flex: 1,
@@ -775,6 +793,7 @@ const styles = createThemedStyles(() =>
       fontSize: 11,
       fontWeight: '800' as const,
       color: '#241c04',
+      textAlign: 'center',
     },
   })
 );

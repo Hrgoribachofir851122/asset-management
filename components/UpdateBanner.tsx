@@ -120,13 +120,13 @@ export default function UpdateBanner() {
   return (
     <View style={styles.banner}>
       <View style={styles.headRow}>
+        <Pressable onPress={dismiss} hitSlop={8} style={styles.closeBtn}>
+          <X size={15} color={colors.dark.textMuted} />
+        </Pressable>
         <Sparkles size={16} color={colors.dark.green} />
         <Text style={styles.title} numberOfLines={1}>
           نسخه جدید {update.latestVersion} منتشر شد (نسخه فعلی: {update.currentVersion})
         </Text>
-        <Pressable onPress={dismiss} hitSlop={8} style={styles.closeBtn}>
-          <X size={15} color={colors.dark.textMuted} />
-        </Pressable>
       </View>
 
       {notesLines.length > 0 && (
@@ -140,11 +140,11 @@ export default function UpdateBanner() {
       )}
 
       <View style={styles.btnRow}>
+        {checking && <RefreshCw size={13} color={colors.dark.textMuted} />}
         <Pressable style={styles.downloadBtn} onPress={download}>
           <Download size={14} color={colors.dark.background} />
           <Text style={styles.downloadText}>دانلود نسخه جدید</Text>
         </Pressable>
-        {checking && <RefreshCw size={13} color={colors.dark.textMuted} />}
       </View>
     </View>
   );
@@ -208,6 +208,7 @@ const styles = createThemedStyles(() =>
       fontSize: 12,
       fontWeight: '800' as const,
       color: colors.dark.background,
+      textAlign: 'center',
     },
   })
 );

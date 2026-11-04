@@ -38,6 +38,7 @@ const styles = createThemedStyles(() =>
       fontSize: 16,
       fontWeight: '700' as const,
       color: colors.dark.text,
+      textAlign: 'center',
     },
     button: {
       backgroundColor: colors.dark.accent,
@@ -50,6 +51,7 @@ const styles = createThemedStyles(() =>
       color: colors.dark.background,
       fontWeight: '700' as const,
       fontSize: 14,
+      textAlign: 'center',
     },
   })
 );

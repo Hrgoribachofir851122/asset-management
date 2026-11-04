@@ -140,14 +140,6 @@ export default function IpStatusCard() {
       testID="ip-status-card"
     >
       <View style={styles.headRow}>
-        {unknown ? (
-          <HelpCircle size={20} color={colors.dark.textSecondary} />
-        ) : sanctioned ? (
-          <ShieldAlert size={20} color={colors.dark.red} />
-        ) : (
-          <ShieldCheck size={20} color={colors.dark.green} />
-        )}
-        <Text style={styles.title}>بررسی IP و فیلترشکن</Text>
         <Pressable
           style={styles.refreshBtn}
           onPress={() => void check(true, true)}
@@ -161,6 +153,14 @@ export default function IpStatusCard() {
             <RefreshCw size={14} color={colors.dark.accent} />
           )}
         </Pressable>
+        {unknown ? (
+          <HelpCircle size={20} color={colors.dark.textSecondary} />
+        ) : sanctioned ? (
+          <ShieldAlert size={20} color={colors.dark.red} />
+        ) : (
+          <ShieldCheck size={20} color={colors.dark.green} />
+        )}
+        <Text style={styles.title}>بررسی IP و فیلترشکن</Text>
       </View>
 
       <View style={styles.statusRow}>
@@ -244,7 +244,7 @@ const styles = createThemedStyles(() =>
       borderColor: colors.dark.cardBorder,
     },
     headRow: {
-      flexDirection: 'row-reverse',
+      flexDirection: 'row',
       alignItems: 'center',
       gap: 8,
     },
@@ -259,7 +259,7 @@ const styles = createThemedStyles(() =>
       padding: 6,
     },
     statusRow: {
-      flexDirection: 'row-reverse',
+      flexDirection: 'row',
       alignItems: 'center',
       gap: 8,
       marginTop: 12,

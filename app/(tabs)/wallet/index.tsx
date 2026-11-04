@@ -3127,8 +3127,6 @@ export default function WalletScreen() {
       {/* ── کارت مجموع دارایی‌ها ── */}
           <View style={styles.portfolioCard}>
             <View style={styles.portfolioHeader}>
-              <Wallet size={20} color={colors.dark.accent} />
-              <Text style={styles.portfolioTitle}>مجموع دارایی‌ها (همه صرافی‌ها)</Text>
               <Pressable
                 style={styles.refreshAllBtn}
                 onPress={() => void handleRefreshAll()}
@@ -3141,6 +3139,8 @@ export default function WalletScreen() {
                   <RefreshCw size={16} color={colors.dark.accent} />
                 )}
               </Pressable>
+              <Wallet size={20} color={colors.dark.accent} />
+              <Text style={styles.portfolioTitle}>مجموع دارایی‌ها (همه صرافی‌ها)</Text>
             </View>
 
             <View style={styles.portfolioValues}>
@@ -3181,13 +3181,13 @@ export default function WalletScreen() {
             </View>
 
             <View style={styles.tomanPriceRow}>
+              {tomanQuery.isFetching && (
+                <ActivityIndicator size="small" color={colors.dark.accent} />
+              )}
               <Text style={styles.tomanPriceLabel}>قیمت تتر</Text>
               <Text style={styles.tomanPriceValue}>
                 {usdtToToman > 0 ? `${usdtToToman.toLocaleString('fa-IR')} تومان` : 'در حال دریافت...'}
               </Text>
-              {tomanQuery.isFetching && (
-                <ActivityIndicator size="small" color={colors.dark.accent} />
-              )}
             </View>
 
             {/* ── v1.8.0 — بازخورد رفرش: پیام گذرا + ساعت آخرین به‌روزرسانی ── */}
@@ -3650,6 +3650,19 @@ function WalletItem({
       {/* v1.4.2 — سنسور نامرئی: وقتی کارت بسته است هم سیگنال ردیف‌ها شمرده می‌شود */}
       <BlinkGroupSensor group={exchGroup} items={sensorItems} />
       <Pressable style={styles.walletHeader} onPress={onToggle}>
+        <View style={styles.walletActions}>
+          <Pressable style={styles.actionBtn} onPress={onRefresh} hitSlop={6}>
+            <RefreshCw size={14} color={colors.dark.accent} />
+          </Pressable>
+          <Pressable style={styles.actionBtn} onPress={onRemove} hitSlop={6}>
+            <Trash2 size={14} color={colors.dark.red} />
+          </Pressable>
+          {isExpanded ? (
+            <ChevronUp size={16} color={colors.dark.textMuted} />
+          ) : (
+            <ChevronDown size={16} color={colors.dark.textMuted} />
+          )}
+        </View>
         <View style={styles.walletLeft}>
           <View style={styles.walletIcon}>
             <Key size={18} color={colors.dark.blue} />
@@ -3687,19 +3700,6 @@ function WalletItem({
               {data.totalPnlUsd > 0 ? '▲' : '▼'} {formatSignedUsd(data.totalPnlUsd)}
             </Text>
           )}
-          <View style={styles.walletActions}>
-            <Pressable style={styles.actionBtn} onPress={onRefresh} hitSlop={6}>
-              <RefreshCw size={14} color={colors.dark.accent} />
-            </Pressable>
-            <Pressable style={styles.actionBtn} onPress={onRemove} hitSlop={6}>
-              <Trash2 size={14} color={colors.dark.red} />
-            </Pressable>
-            {isExpanded ? (
-              <ChevronUp size={16} color={colors.dark.textMuted} />
-            ) : (
-              <ChevronDown size={16} color={colors.dark.textMuted} />
-            )}
-          </View>
         </View>
       </Pressable>
 
@@ -4388,11 +4388,11 @@ function PnlPeriodSection({
   return (
     <View style={styles.pnlSection}>
       <View style={styles.pnlSectionHeader}>
-        <TrendingUp size={14} color={colors.dark.accent} />
-        <Text style={styles.pnlSectionTitle}>سود/زیان (PnL) دوره‌ای</Text>
         {pnlQuery.isFetching && (
           <ActivityIndicator size="small" color={colors.dark.accent} />
         )}
+        <TrendingUp size={14} color={colors.dark.accent} />
+        <Text style={styles.pnlSectionTitle}>سود/زیان (PnL) دوره‌ای</Text>
       </View>
 
       {iranGated ? (
@@ -4610,11 +4610,11 @@ function TotalPnlPeriodSection({
   return (
     <View style={styles.pnlSection}>
       <View style={styles.pnlSectionHeader}>
-        <TrendingUp size={14} color={colors.dark.accent} />
-        <Text style={styles.pnlSectionTitle}>سود/زیان دوره‌ای کل دارایی‌ها (مجموع صرافی‌ها)</Text>
         {aggregate.loading && (
           <ActivityIndicator size="small" color={colors.dark.accent} />
         )}
+        <TrendingUp size={14} color={colors.dark.accent} />
+        <Text style={styles.pnlSectionTitle}>سود/زیان دوره‌ای کل دارایی‌ها (مجموع صرافی‌ها)</Text>
       </View>
 
       <View style={styles.pnlChipsRow}>
@@ -4761,6 +4761,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
     fontWeight: '800' as const,
     color: colors.dark.text,
     letterSpacing: 0.2,
+    textAlign: 'center',
   },
   pageHeaderAccent: {
     width: 44,
@@ -4771,13 +4772,15 @@ const styles = createThemedStyles(() => StyleSheet.create({
   },
   // v1.4.14 — three top-level tabs (ارز دیجیتال | ریالی و فلزات | پیش‌بینی طلا)
   mainTabBar: {
-    flexDirection: 'row',
+    // v1.7.0 — با قفل RTL، برای حفظ ظاهر قبلیِ گوشی (اولین تب سمت راست):
+    flexDirection: 'row-reverse',
     gap: 6,
     marginBottom: 14,
   },
   mainTab: {
     flex: 1,
-    flexDirection: 'row',
+    // v1.7.0 — آیکون هر تب سمت راستِ متنش (مثل گوشی)
+    flexDirection: 'row-reverse',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 5,
@@ -4899,10 +4902,11 @@ const styles = createThemedStyles(() => StyleSheet.create({
   portfolioValueLabel: {
     fontSize: 12,
     color: colors.dark.textSecondary,
+    textAlign: 'right',
   },
   portfolioValueAmount: {
     flex: 1,
-    textAlign: 'left',
+    textAlign: 'right',
     fontSize: 15,
     fontWeight: '700' as const,
     color: colors.dark.green,
@@ -4922,12 +4926,14 @@ const styles = createThemedStyles(() => StyleSheet.create({
     fontSize: 15,
     fontWeight: '700' as const,
     color: colors.dark.textSecondary,
+    textAlign: 'center',
   },
   tomanPriceValue: {
     fontSize: 20,
     fontWeight: '800' as const,
     color: colors.dark.accent,
     letterSpacing: 0.3,
+    textAlign: 'center',
   },
   // v1.8.0 — بازخورد رفرش مجموع دارایی‌ها (پیام گذرا + ساعت آخرین به‌روزرسانی)
   refreshFeedbackRow: {
@@ -4942,10 +4948,12 @@ const styles = createThemedStyles(() => StyleSheet.create({
     fontSize: 12,
     fontWeight: '800' as const,
     color: colors.dark.green,
+    textAlign: 'right',
   },
   refreshFeedbackTime: {
     fontSize: 11,
     color: colors.dark.textMuted,
+    textAlign: 'right',
   },
   portfolioSub: {
     fontSize: 12,
@@ -5042,6 +5050,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
   balanceLoadingText: {
     fontSize: 13,
     color: colors.dark.textSecondary,
+    textAlign: 'center',
   },
   balanceError: {
     flexDirection: 'row',
@@ -5117,6 +5126,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
     fontSize: 11,
     fontWeight: '700' as const,
     color: colors.dark.orange,
+    textAlign: 'right',
   },
   // ── v1.4.12 — sanctioned-IP (geo-block) card styles ──
   sanctionCard: {
@@ -5151,6 +5161,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
     fontSize: 11,
     fontWeight: '700' as const,
     color: colors.dark.red,
+    textAlign: 'center',
   },
   sanctionBtnGhost: {
     backgroundColor: 'transparent',
@@ -5161,6 +5172,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
     fontSize: 11,
     fontWeight: '700' as const,
     color: colors.dark.red,
+    textAlign: 'center',
   },
   balanceList: {
     gap: 8,
@@ -5184,6 +5196,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
     fontSize: 12,
     fontWeight: '700' as const,
     color: colors.dark.accent,
+    textAlign: 'right',
   },
   sectionTotal: {
     fontSize: 12,
@@ -5221,6 +5234,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
     fontSize: 9,
     fontWeight: '700' as const,
     color: colors.dark.blue,
+    textAlign: 'center',
   },
   assetName: {
     fontSize: 13,
@@ -5233,6 +5247,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
     fontSize: 11,
     color: colors.dark.textSecondary,
     marginTop: 1,
+    textAlign: 'center',
   },
   assetAvg: {
     fontSize: 10,
@@ -5279,11 +5294,13 @@ const styles = createThemedStyles(() => StyleSheet.create({
   assetReturn: {
     fontSize: 9.5,
     fontWeight: '700' as const,
+    textAlign: 'center',
   },
   assetPeriodChange: {
     fontSize: 9.5,
     fontWeight: '700' as const,
     marginTop: 1,
+    textAlign: 'right',
   },
   balanceValue: {
     fontSize: 13,
@@ -5319,6 +5336,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
     fontSize: 10,
     color: colors.dark.textMuted,
     marginTop: 2,
+    textAlign: 'right',
   },
   positionRight: {
     alignItems: 'flex-end',
@@ -5384,6 +5402,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
     fontSize: 15,
     fontWeight: '700' as const,
     color: colors.dark.text,
+    textAlign: 'center',
   },
   emptySubtitle: {
     fontSize: 12,
@@ -5418,6 +5437,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
     borderColor: colors.dark.border,
     color: colors.dark.text,
     fontSize: 14,
+    textAlign: 'left',
     padding: 12,
     marginBottom: 12,
   },
@@ -5439,6 +5459,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
     color: '#FFF',
     fontSize: 13,
     fontWeight: '700' as const,
+    textAlign: 'center',
   },
   otpStatus: {
     fontSize: 12,
@@ -5504,6 +5525,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
     color: colors.dark.background,
     fontSize: 14,
     fontWeight: '700' as const,
+    textAlign: 'center',
   },
   formBtnCancel: {
     backgroundColor: colors.dark.card,
@@ -5514,6 +5536,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
     color: colors.dark.textSecondary,
     fontSize: 14,
     fontWeight: '600' as const,
+    textAlign: 'center',
   },
   addButton: {
     flexDirection: 'row',
@@ -5532,6 +5555,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
     color: colors.dark.accent,
     fontSize: 14,
     fontWeight: '700' as const,
+    textAlign: 'center',
   },
   disclaimer: {
     padding: 10,
@@ -5584,6 +5608,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
     fontSize: 11,
     fontWeight: '600' as const,
     color: colors.dark.textSecondary,
+    textAlign: 'center',
   },
   pnlChipTextActive: {
     color: colors.dark.accent,
@@ -5637,6 +5662,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '700' as const,
+    textAlign: 'center',
   },
   pnlFailedBox: {
     marginTop: 8,
@@ -5650,5 +5676,6 @@ const styles = createThemedStyles(() => StyleSheet.create({
     fontSize: 11,
     lineHeight: 17,
     color: colors.dark.text,
+    textAlign: 'right',
   },
 }));

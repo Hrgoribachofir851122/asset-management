@@ -102,7 +102,7 @@ export default function DropdownPicker({
 
 const styles = createThemedStyles(() => StyleSheet.create({
   dropdownTrigger: {
-    flexDirection: 'row',
+    flexDirection: 'row-reverse',
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: colors.dark.inputBg,
@@ -164,7 +164,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
     maxHeight: 400,
   },
   modalOption: {
-    flexDirection: 'row',
+    flexDirection: 'row-reverse',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingVertical: 14,

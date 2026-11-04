@@ -224,8 +224,6 @@ export default function LocalAssetsSection({
     <View style={styles.card}>
       {/* ── header ── */}
       <View style={styles.header}>
-        <Landmark size={18} color={colors.dark.accent} />
-        <Text style={styles.title}>دارایی ریالی و فلزات</Text>
         <Pressable style={styles.refreshBtn} onPress={refresh}>
           {pricesQuery.isFetching ? (
             <ActivityIndicator size="small" color={colors.dark.accent} />
@@ -240,6 +238,8 @@ export default function LocalAssetsSection({
             <ChevronDown size={14} color={colors.dark.textSecondary} />
           )}
         </Pressable>
+        <Landmark size={18} color={colors.dark.accent} />
+        <Text style={styles.title}>دارایی ریالی و فلزات</Text>
       </View>
 
       {/* ── v1.4.16: مجموع کل — بالا (همیشه نمایان) ── */}
@@ -902,7 +902,7 @@ const styles = createThemedStyles(() =>
     },
     // v1.4.16 — «دارایی‌های من» header row with its own collapse arrow
     myAssetsHeader: {
-      flexDirection: 'row',
+      flexDirection: 'row-reverse',
       alignItems: 'center',
       justifyContent: 'space-between',
       marginTop: 12,
@@ -970,6 +970,7 @@ const styles = createThemedStyles(() =>
       fontSize: 11,
       color: colors.dark.textSecondary,
       minWidth: 30,
+      textAlign: 'right',
     },
     assetHint: {
       fontSize: 9,
@@ -984,6 +985,7 @@ const styles = createThemedStyles(() =>
       fontSize: 12,
       fontWeight: '700' as const,
       color: colors.dark.green,
+      textAlign: 'right',
     },
     assetValueEmpty: {
       color: colors.dark.textSecondary,
@@ -1015,6 +1017,7 @@ const styles = createThemedStyles(() =>
       fontSize: 10,
       fontWeight: '600' as const,
       color: colors.dark.textSecondary,
+      textAlign: 'center',
     },
     selectorChipTextActive: {
       color: colors.dark.accent,
@@ -1109,6 +1112,7 @@ const styles = createThemedStyles(() =>
       fontSize: 10.5,
       fontWeight: '600' as const,
       color: colors.dark.textSecondary,
+      textAlign: 'center',
     },
     pnlPeriodTextActive: {
       color: colors.dark.accent,
@@ -1124,6 +1128,7 @@ const styles = createThemedStyles(() =>
     pnlLoadingText: {
       fontSize: 11,
       color: colors.dark.textSecondary,
+      textAlign: 'center',
     },
     pnlEmpty: {
       fontSize: 10.5,
@@ -1152,6 +1157,7 @@ const styles = createThemedStyles(() =>
       fontSize: 11,
       fontWeight: '800' as const,
       color: colors.dark.green,
+      textAlign: 'center',
     },
     pnlRow: {
       flexDirection: 'row',
@@ -1174,10 +1180,12 @@ const styles = createThemedStyles(() =>
       fontSize: 11,
       fontWeight: '600' as const,
       color: colors.dark.textSecondary,
+      textAlign: 'right',
     },
     pnlRowValue: {
       fontSize: 12,
       fontWeight: '700' as const,
+      textAlign: 'right',
     },
     pnlNote: {
       fontSize: 9,
@@ -1207,17 +1215,20 @@ const styles = createThemedStyles(() =>
       fontSize: 11,
       fontWeight: '800' as const,
       color: colors.dark.text,
+      textAlign: 'right',
     },
     roSub: {
       fontSize: 9.5,
       color: colors.dark.textSecondary,
       marginTop: 3,
       lineHeight: 14,
+      textAlign: 'right',
     },
     roValue: {
       fontSize: 12,
       fontWeight: '700' as const,
       color: colors.dark.text,
+      textAlign: 'right',
     },
     roValueEmpty: {
       color: colors.dark.textMuted,

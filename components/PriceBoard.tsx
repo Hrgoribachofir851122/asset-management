@@ -402,7 +402,8 @@ const styles = createThemedStyles(() =>
       borderColor: colors.dark.accent + '26',
     },
     header: {
-      flexDirection: 'row',
+      // v1.7.0 — مثل گوشی: آیکون سمت راست، تیتر چسبیده به آن، رفرش سمت چپ
+      flexDirection: 'row-reverse',
       alignItems: 'center',
       gap: 8,
       marginBottom: 12,
@@ -433,7 +434,8 @@ const styles = createThemedStyles(() =>
       padding: 10,
     },
     priceGrid: {
-      flexDirection: 'row',
+      // v1.7.0 — چینش چیپ‌ها از راست به چپ مثل گوشی
+      flexDirection: 'row-reverse',
       flexWrap: 'wrap',
       gap: 6,
     },
@@ -515,7 +517,8 @@ const styles = createThemedStyles(() =>
       padding: 10,
     },
     talineHeader: {
-      flexDirection: 'row',
+      // v1.7.0 — بج «ط» سمت راست مثل گوشی
+      flexDirection: 'row-reverse',
       alignItems: 'center',
       gap: 8,
       marginBottom: 8,
@@ -543,7 +546,8 @@ const styles = createThemedStyles(() =>
       textAlign: 'right',
     },
     talineRow: {
-      flexDirection: 'row',
+      // v1.7.0 — خرید راست، فروش چپ مثل گوشی
+      flexDirection: 'row-reverse',
       gap: 8,
     },
     talineBox: {
@@ -581,7 +585,8 @@ const styles = createThemedStyles(() =>
       fontSize: 9,
       color: colors.dark.textMuted,
       marginTop: 8,
-      textAlign: 'center',
+      // v1.7.0 — درخواست کاربر: متن طلایین راست‌چین
+      textAlign: 'right',
     },
     /* v1.5.0 — کادرهای بیت‌کوین/اتریوم */
     cryptoWrap: {
@@ -604,7 +609,8 @@ const styles = createThemedStyles(() =>
       paddingVertical: 8,
     },
     cryptoHead: {
-      flexDirection: 'row',
+      // v1.7.0 — درخواست کاربر: آیکون راست، نام بیت‌کوین/اتریوم چسبیده به آن
+      flexDirection: 'row-reverse',
       alignItems: 'center',
       gap: 8,
       marginBottom: 8,
@@ -635,7 +641,8 @@ const styles = createThemedStyles(() =>
       fontWeight: '800' as const,
     },
     cryptoPricesRow: {
-      flexDirection: 'row',
+      // v1.7.0 — دلاری راست، تومانی چپ مثل گوشی
+      flexDirection: 'row-reverse',
       gap: 8,
     },
     cryptoCell: {

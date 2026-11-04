@@ -69,6 +69,7 @@ const styles = createThemedStyles(() =>
       fontWeight: '800' as const,
       color: colors.dark.text,
       letterSpacing: 0.2,
+      textAlign: 'center',
     },
     pageHeaderAccent: {
       width: 44,

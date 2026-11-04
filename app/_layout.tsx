@@ -14,7 +14,14 @@
  */
 
 import React, { useEffect } from 'react';
-import { View, StyleSheet, AppState, AppStateStatus } from 'react-native';
+import {
+  View,
+  StyleSheet,
+  AppState,
+  AppStateStatus,
+  Platform,
+  I18nManager,
+} from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -29,6 +36,15 @@ import UpdateBanner from '@/components/UpdateBanner';
 import WhatsNewModal from '@/components/WhatsNewModal';
 // v1.3.8 — همگام‌سازی دارایی‌های تحت‌نظر اعلان
 import { syncPriceAlertConfig } from '@/utils/priceAlertApi';
+
+// v1.7.0 — قفل جهت چیدمان (درخواست کاربر: چیدمان روی گوشی فارسی و انگلیسی
+// باید «دقیقاً یکسان» بماند). تمام راست‌چین‌ها با استایل صریح (textAlign right
+// و ترتیب فرزندان) انجام می‌شوند؛ آینه‌سازی خودکارِ اندروید وقتی زبان گوشی
+// فارسی است باید خاموش بماند — وگرنه ردیف‌ها برعکس می‌شوند.
+if (Platform.OS !== 'web') {
+  I18nManager.allowRTL(false);
+  I18nManager.forceRTL(false);
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {

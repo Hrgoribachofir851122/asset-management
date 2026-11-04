@@ -8,9 +8,10 @@
  * v1.5.1 — the app now OPENS on «قیمت‌ها» (user request): live prices are
  * the first thing you see; مدیریت دارایی stays one tap away.
  *
- * Under RTL (Persian devices) the FIRST declared tab renders at the far
- * RIGHT — so this declaration order produces, right → left:
- *     قیمت‌ها ← مدیریت دارایی ← تنظیمات
+ * v1.7.0 — RTL lock: Android no longer mirrors layouts automatically, so the
+ * declaration order itself must produce the SAME bar the user always had on
+ * their Persian phone (right → left):  قیمت‌ها ← مدیریت دارایی ← تنظیمات.
+ * The app still OPENS on «قیمت‌ها» (initialRouteName below).
  *
  * The tab bar is themed manually (lucide icons + live colors.dark palette)
  * exactly like the original Pampi tabs layout.
@@ -41,10 +42,10 @@ export default function TabsLayout() {
       initialRouteName="prices/index"
     >
       <Tabs.Screen
-        name="prices/index"
+        name="settings/index"
         options={{
-          title: 'قیمت‌ها',
-          tabBarIcon: ({ color, size }) => <TrendingUp size={size} color={color} />,
+          title: 'تنظیمات',
+          tabBarIcon: ({ color, size }) => <Settings size={size} color={color} />,
         }}
       />
       <Tabs.Screen
@@ -55,10 +56,10 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="settings/index"
+        name="prices/index"
         options={{
-          title: 'تنظیمات',
-          tabBarIcon: ({ color, size }) => <Settings size={size} color={color} />,
+          title: 'قیمت‌ها',
+          tabBarIcon: ({ color, size }) => <TrendingUp size={size} color={color} />,
         }}
       />
     </Tabs>

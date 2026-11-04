@@ -112,6 +112,7 @@ const whalePnlStyles = StyleSheet.create({
   chipLabel: {
     fontSize: 8.5,
     color: colors.dark.textMuted,
+    textAlign: 'right',
   },
   chipValue: {
     fontSize: 9.5,
@@ -121,11 +122,13 @@ const whalePnlStyles = StyleSheet.create({
     fontSize: 9,
     color: colors.dark.textMuted,
     marginTop: 4,
+    textAlign: 'right',
   },
   err: {
     fontSize: 9,
     color: colors.dark.textMuted,
     marginTop: 4,
+    textAlign: 'right',
   },
   note: {
     fontSize: 8,
@@ -133,6 +136,7 @@ const whalePnlStyles = StyleSheet.create({
     width: '100%',
     marginTop: 2,
     lineHeight: 12,
+    textAlign: 'right',
   },
 });
 
@@ -205,6 +209,17 @@ export default function WalletDetailScreen() {
     >
       <View style={styles.headerCard}>
         <View style={styles.headerTop}>
+          <Pressable
+            style={[styles.refreshBtn, walletQuery.isFetching && styles.refreshBtnActive]}
+            onPress={() => walletQuery.refetch()}
+            disabled={walletQuery.isFetching}
+          >
+            {walletQuery.isFetching ? (
+              <ActivityIndicator size="small" color={colors.dark.accent} />
+            ) : (
+              <RefreshCw size={18} color={colors.dark.accent} />
+            )}
+          </Pressable>
           <View style={styles.walletIconBig}>
             <Wallet size={24} color={colors.dark.accent} />
           </View>
@@ -217,17 +232,6 @@ export default function WalletDetailScreen() {
               </Text>
             </Pressable>
           </View>
-          <Pressable
-            style={[styles.refreshBtn, walletQuery.isFetching && styles.refreshBtnActive]}
-            onPress={() => walletQuery.refetch()}
-            disabled={walletQuery.isFetching}
-          >
-            {walletQuery.isFetching ? (
-              <ActivityIndicator size="small" color={colors.dark.accent} />
-            ) : (
-              <RefreshCw size={18} color={colors.dark.accent} />
-            )}
-          </Pressable>
         </View>
 
         <View style={styles.apiTag}>
@@ -574,6 +578,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
     fontSize: 10,
     fontWeight: '600' as const,
     color: colors.dark.green,
+    textAlign: 'right',
   },
   summaryRow: {
     flexDirection: 'row',
@@ -594,6 +599,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
   summaryLabel: {
     fontSize: 10,
     color: colors.dark.textMuted,
+    textAlign: 'center',
   },
   summaryValue: {
     fontSize: 15,
@@ -609,6 +615,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
   loadingText: {
     fontSize: 13,
     color: colors.dark.textSecondary,
+    textAlign: 'center',
   },
   errorBox: {
     alignItems: 'center',
@@ -634,6 +641,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
     fontSize: 13,
     fontWeight: '700' as const,
     color: '#FFF',
+    textAlign: 'center',
   },
   memeAlert: {
     flexDirection: 'row',
@@ -680,6 +688,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
     fontSize: 12,
     fontWeight: '600' as const,
     color: colors.dark.textMuted,
+    textAlign: 'center',
   },
   sectionTabTextActive: {
     color: colors.dark.accent,
@@ -698,6 +707,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
   emptySectionText: {
     fontSize: 14,
     color: colors.dark.textMuted,
+    textAlign: 'center',
   },
   positionCard: {
     backgroundColor: colors.dark.surface,
@@ -763,6 +773,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
   posDetailLabel: {
     fontSize: 9,
     color: colors.dark.textMuted,
+    textAlign: 'center',
   },
   posDetailValue: {
     fontSize: 11,
@@ -782,6 +793,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
     fontSize: 11,
     color: colors.dark.orange,
     fontWeight: '600' as const,
+    textAlign: 'right',
   },
   spotRow: {
     flexDirection: 'row',
@@ -836,12 +848,14 @@ const styles = createThemedStyles(() => StyleSheet.create({
     fontSize: 10,
     color: colors.dark.orange,
     marginTop: 2,
+    textAlign: 'right',
   },
   spotDetailHint: {
     fontSize: 9,
     color: colors.dark.accent,
     marginTop: 3,
     fontWeight: '600' as const,
+    textAlign: 'right',
   },
   tradeCard: {
     backgroundColor: colors.dark.surface,

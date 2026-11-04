@@ -214,6 +214,7 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     fontWeight: '900',
     color: colors.dark.background,
+    textAlign: 'center',
   },
   btnCancelText: {
     color: colors.dark.text,

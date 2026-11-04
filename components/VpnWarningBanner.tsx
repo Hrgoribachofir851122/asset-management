@@ -60,6 +60,9 @@ export default function VpnWarningBanner({ show, variant = 'exchange' }: VpnWarn
   if (variant === 'safe') {
     return (
       <View style={styles.safeBanner}>
+        <Pressable style={styles.closeBtn} onPress={() => setDismissed(true)} hitSlop={8}>
+          <X size={16} color={colors.dark.textMuted} />
+        </Pressable>
         <ShieldCheck size={20} color={colors.dark.green} />
         <View style={styles.textCol}>
           <Text style={styles.safeTitle}>این بخش با IP ایران بدون مشکل متصل است</Text>
@@ -75,15 +78,15 @@ export default function VpnWarningBanner({ show, variant = 'exchange' }: VpnWarn
             <Text style={styles.safeBtnText}>{checking ? 'در حال بررسی...' : 'بررسی مجدد IP'}</Text>
           </Pressable>
         </View>
-        <Pressable style={styles.closeBtn} onPress={() => setDismissed(true)} hitSlop={8}>
-          <X size={16} color={colors.dark.textMuted} />
-        </Pressable>
       </View>
     );
   }
 
   return (
     <View style={styles.banner}>
+      <Pressable style={styles.closeBtn} onPress={() => setDismissed(true)} hitSlop={8}>
+        <X size={16} color={colors.dark.textMuted} />
+      </Pressable>
       <AlertTriangle size={20} color={colors.dark.orange} />
       <View style={styles.textCol}>
         <Text style={styles.title}>فیلترشکن خاموش است</Text>
@@ -97,9 +100,6 @@ export default function VpnWarningBanner({ show, variant = 'exchange' }: VpnWarn
           <Text style={styles.howBtnText}>{checking ? 'در حال بررسی...' : 'بررسی مجدد'}</Text>
         </Pressable>
       </View>
-      <Pressable style={styles.closeBtn} onPress={() => setDismissed(true)} hitSlop={8}>
-        <X size={16} color={colors.dark.textMuted} />
-      </Pressable>
     </View>
   );
 }
@@ -156,6 +156,7 @@ const styles = createThemedStyles(() =>
       fontSize: 11,
       fontWeight: '700' as const,
       color: colors.dark.green,
+      textAlign: 'right',
     },
     textCol: {
       flex: 1,
@@ -188,6 +189,7 @@ const styles = createThemedStyles(() =>
       fontSize: 11,
       fontWeight: '700' as const,
       color: colors.dark.orange,
+      textAlign: 'right',
     },
     closeBtn: {
       padding: 4,

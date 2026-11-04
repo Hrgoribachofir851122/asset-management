@@ -208,10 +208,6 @@ export default function BlockchainWalletsSection({
       {/* ── کارت مجموع کیف پول‌های بلاکچین ── */}
       <View style={styles.portfolioCard}>
         <View style={styles.portfolioHeader}>
-          <LinkIcon size={20} color={colors.dark.accent} />
-          <Text style={styles.portfolioTitle}>مجموع کیف پول‌های بلاکچین</Text>
-          {/* v1.8.0 — دکمه فقط هنگام رفرشِ دستیِ فعال قفل می‌شود (نه با
-              isFetching پول‌ها)؛ اسپینر هر دو حالت را نشان می‌دهد. */}
           <Pressable
             style={styles.refreshAllBtn}
             onPress={onRefreshAll}
@@ -223,6 +219,10 @@ export default function BlockchainWalletsSection({
               <RefreshCw size={16} color={colors.dark.accent} />
             )}
           </Pressable>
+          <LinkIcon size={20} color={colors.dark.accent} />
+          <Text style={styles.portfolioTitle}>مجموع کیف پول‌های بلاکچین</Text>
+          {/* v1.8.0 — دکمه فقط هنگام رفرشِ دستیِ فعال قفل می‌شود (نه با
+              isFetching پول‌ها)؛ اسپینر هر دو حالت را نشان می‌دهد. */}
         </View>
 
         <View style={styles.portfolioValues}>
@@ -275,6 +275,13 @@ export default function BlockchainWalletsSection({
       {/* ── گیت فیلترشکن: بلاکچین‌ها API خارجی هستند ── */}
       {vpnBlocked && wallets.length > 0 && (
         <View style={styles.vpnGateCard}>
+          <Pressable style={styles.vpnGateBtn} onPress={onRecheckVpn} disabled={vpnChecking}>
+            {vpnChecking ? (
+              <ActivityIndicator size="small" color={colors.dark.red} />
+            ) : (
+              <RefreshCcw size={16} color={colors.dark.red} />
+            )}
+          </Pressable>
           <ShieldAlert size={22} color={colors.dark.red} />
           <View style={styles.vpnGateTexts}>
             <Text style={styles.vpnGateTitle}>فیلترشکن خاموش است (IP ایران)</Text>
@@ -283,13 +290,6 @@ export default function BlockchainWalletsSection({
               فیلترشکن، موجودی‌ها خودکار تازه می‌شوند.
             </Text>
           </View>
-          <Pressable style={styles.vpnGateBtn} onPress={onRecheckVpn} disabled={vpnChecking}>
-            {vpnChecking ? (
-              <ActivityIndicator size="small" color={colors.dark.red} />
-            ) : (
-              <RefreshCcw size={16} color={colors.dark.red} />
-            )}
-          </Pressable>
         </View>
       )}
 
@@ -629,14 +629,6 @@ function NetworkDropdown({
                         onPress={() => toggle(n)}
                         testID={`network-row-${n}`}
                       >
-                        <View style={[styles.dropdownRowDot, { backgroundColor: meta.color }]} />
-                        <View style={styles.dropdownRowTexts}>
-                          <Text style={styles.dropdownRowLabel}>{meta.label}</Text>
-                          <Text style={styles.dropdownRowHint}>
-                            {meta.addrHint}
-                            {meta.wallets ? ` • ${meta.wallets}` : ''}
-                          </Text>
-                        </View>
                         <View
                           style={[
                             styles.checkbox,
@@ -644,6 +636,14 @@ function NetworkDropdown({
                           ]}
                         >
                           {active && <Check size={13} color={colors.dark.background} />}
+                        </View>
+                        <View style={[styles.dropdownRowDot, { backgroundColor: meta.color }]} />
+                        <View style={styles.dropdownRowTexts}>
+                          <Text style={styles.dropdownRowLabel}>{meta.label}</Text>
+                          <Text style={styles.dropdownRowHint}>
+                            {meta.addrHint}
+                            {meta.wallets ? ` • ${meta.wallets}` : ''}
+                          </Text>
                         </View>
                       </Pressable>
                     );
@@ -1040,6 +1040,26 @@ function BlockchainWalletCard({
         )}
       />
       <Pressable style={styles.walletHeader} onPress={onToggle}>
+        <View style={styles.walletActions}>
+          <Pressable style={styles.walletIconBtn} onPress={onRemove} hitSlop={8}>
+            <Trash2 size={13} color={colors.dark.red} />
+          </Pressable>
+          <Pressable style={styles.walletIconBtn} onPress={onEdit} hitSlop={8}>
+            <Pencil size={13} color={colors.dark.blue} />
+          </Pressable>
+          <Pressable style={styles.walletIconBtn} onPress={onRefresh} hitSlop={8} disabled={manualRefreshing}>
+            {manualRefreshing || isFetching ? (
+              <ActivityIndicator size="small" color={colors.dark.accent} />
+            ) : (
+              <RefreshCw size={13} color={data ? colors.dark.accent : colors.dark.textMuted} />
+            )}
+          </Pressable>
+          {isExpanded ? (
+            <ChevronUp size={15} color={colors.dark.textSecondary} />
+          ) : (
+            <ChevronDown size={15} color={colors.dark.textSecondary} />
+          )}
+        </View>
         <View style={[styles.walletAvatar, { backgroundColor: meta.color + '33' }]}>
           <Text style={[styles.walletAvatarText, { color: meta.color }]}>{meta.short}</Text>
         </View>
@@ -1099,26 +1119,6 @@ function BlockchainWalletCard({
             </>
           )}
         </View>
-        <View style={styles.walletActions}>
-          <Pressable style={styles.walletIconBtn} onPress={onRemove} hitSlop={8}>
-            <Trash2 size={13} color={colors.dark.red} />
-          </Pressable>
-          <Pressable style={styles.walletIconBtn} onPress={onEdit} hitSlop={8}>
-            <Pencil size={13} color={colors.dark.blue} />
-          </Pressable>
-          <Pressable style={styles.walletIconBtn} onPress={onRefresh} hitSlop={8} disabled={manualRefreshing}>
-            {manualRefreshing || isFetching ? (
-              <ActivityIndicator size="small" color={colors.dark.accent} />
-            ) : (
-              <RefreshCw size={13} color={data ? colors.dark.accent : colors.dark.textMuted} />
-            )}
-          </Pressable>
-          {isExpanded ? (
-            <ChevronUp size={15} color={colors.dark.textSecondary} />
-          ) : (
-            <ChevronDown size={15} color={colors.dark.textSecondary} />
-          )}
-        </View>
       </Pressable>
 
       {isExpanded && (
@@ -1154,6 +1154,7 @@ function BlockchainWalletCard({
                 <Text style={styles.perNetCopyTitle}>آدرس‌های اختصاصی شبکه‌ها:</Text>
                 {perNetEntries.map(([net, addr]) => (
                   <View key={net} style={styles.perNetCopyRow}>
+                    <CopyAddressButton value={addr} size={12} />
                     <View style={[styles.perNetCopyChip, { backgroundColor: NETWORKS[net].color + '26' }]}>
                       <Text style={[styles.perNetCopyChipText, { color: NETWORKS[net].color }]}>
                         {NETWORKS[net].short}
@@ -1162,7 +1163,6 @@ function BlockchainWalletCard({
                     <Text style={styles.perNetCopyAddr} numberOfLines={1} selectable>
                       {addr}
                     </Text>
-                    <CopyAddressButton value={addr} size={12} />
                   </View>
                 ))}
               </View>
@@ -1378,10 +1378,11 @@ const styles = createThemedStyles(() =>
     portfolioValueLabel: {
       fontSize: 12,
       color: colors.dark.textSecondary,
+      textAlign: 'right',
     },
     portfolioValueAmount: {
       flex: 1,
-      textAlign: 'left',
+      textAlign: 'right',
       fontSize: 15,
       fontWeight: '700' as const,
       color: colors.dark.green,
@@ -1400,11 +1401,13 @@ const styles = createThemedStyles(() =>
       fontSize: 12,
       fontWeight: '700' as const,
       color: colors.dark.text,
+      textAlign: 'right',
     },
     tomanPriceValue: {
       fontSize: 16,
       fontWeight: '800' as const,
       color: colors.dark.accent,
+      textAlign: 'right',
     },
     portfolioSub: {
       fontSize: 10.5,
@@ -1433,11 +1436,13 @@ const styles = createThemedStyles(() =>
       fontSize: 12.5,
       fontWeight: '700' as const,
       color: colors.dark.red,
+      textAlign: 'right',
     },
     vpnGateSub: {
       fontSize: 10,
       lineHeight: 16,
       color: colors.dark.textSecondary,
+      textAlign: 'right',
     },
     vpnGateBtn: {
       padding: 8,
@@ -1476,6 +1481,7 @@ const styles = createThemedStyles(() =>
       fontSize: 10,
       fontWeight: '700' as const,
       color: colors.dark.green,
+      textAlign: 'right',
     },
     inputLabel: {
       fontSize: 11.5,
@@ -1558,6 +1564,7 @@ const styles = createThemedStyles(() =>
       fontSize: 10,
       color: colors.dark.accent,
       fontWeight: '600',
+      textAlign: 'center',
     },
     inputHint: {
       fontSize: 9.5,
@@ -1573,7 +1580,7 @@ const styles = createThemedStyles(() =>
 
     // ── network dropdown (v1.4.17 «منوی کشویی شبکه‌ها») ──
     dropdownBtn: {
-      flexDirection: 'row',
+      flexDirection: 'row-reverse',
       alignItems: 'center',
       justifyContent: 'space-between',
       backgroundColor: colors.dark.surfaceLight,
@@ -1588,6 +1595,7 @@ const styles = createThemedStyles(() =>
       alignItems: 'center',
       gap: 4,
       flex: 1,
+      justifyContent: 'flex-end',
     },
     dropdownDot: {
       width: 8,
@@ -1598,7 +1606,8 @@ const styles = createThemedStyles(() =>
       fontSize: 12.5,
       fontWeight: '700' as const,
       color: colors.dark.text,
-      marginRight: 8,
+      textAlign: 'right',
+      marginLeft: 8,
     },
     dropdownPanel: {
       marginTop: 8,
@@ -1644,6 +1653,7 @@ const styles = createThemedStyles(() =>
       fontSize: 10,
       fontWeight: '700' as const,
       color: colors.dark.accent,
+      textAlign: 'center',
     },
     dropdownGroupNote: {
       fontSize: 9,
@@ -1743,6 +1753,7 @@ const styles = createThemedStyles(() =>
       fontSize: 9.5,
       fontWeight: '800' as const,
       color: colors.dark.blue,
+      textAlign: 'center',
     },
     guideStepText: {
       flex: 1,
@@ -1804,6 +1815,7 @@ const styles = createThemedStyles(() =>
       fontSize: 12,
       fontWeight: '800' as const,
       color: colors.dark.background,
+      textAlign: 'center',
     },
     formBtnCancel: {
       paddingHorizontal: 16,
@@ -1815,6 +1827,7 @@ const styles = createThemedStyles(() =>
       fontSize: 12,
       fontWeight: '700' as const,
       color: colors.dark.textSecondary,
+      textAlign: 'center',
     },
 
     // ── wallet card ──
@@ -1847,7 +1860,7 @@ const styles = createThemedStyles(() =>
       gap: 2,
     },
     walletNameRow: {
-      flexDirection: 'row',
+      flexDirection: 'row-reverse',
       alignItems: 'center',
       gap: 6,
     },
@@ -1883,6 +1896,7 @@ const styles = createThemedStyles(() =>
       fontSize: 11,
       fontWeight: '700' as const,
       color: colors.dark.textSecondary,
+      textAlign: 'right',
     },
     addressBoxValue: {
       fontSize: 11,
@@ -1933,6 +1947,7 @@ const styles = createThemedStyles(() =>
       fontSize: 13,
       fontWeight: '700' as const,
       color: colors.dark.text,
+      textAlign: 'right',
     },
     walletAddress: {
       fontSize: 10,
@@ -1970,7 +1985,7 @@ const styles = createThemedStyles(() =>
     walletPnlLine: {
       fontSize: 9.5,
       fontWeight: '800' as const,
-      textAlign: 'left',
+      textAlign: 'right',
     },
     walletActions: {
       flexDirection: 'row',
@@ -2006,6 +2021,7 @@ const styles = createThemedStyles(() =>
       fontSize: 9,
       fontWeight: '700' as const,
       color: colors.dark.green,
+      textAlign: 'right',
     },
     walletError: {
       fontSize: 10.5,
@@ -2114,6 +2130,7 @@ const styles = createThemedStyles(() =>
     tokenGrowth: {
       fontSize: 9,
       fontWeight: '700' as const,
+      textAlign: 'center',
     },
     tokenPnlPct: {
       fontSize: 9,
@@ -2127,6 +2144,7 @@ const styles = createThemedStyles(() =>
       fontSize: 11,
       fontWeight: '800' as const,
       color: colors.dark.text,
+      textAlign: 'right',
     },
     tokenChange: {
       fontSize: 9,
@@ -2197,6 +2215,7 @@ const styles = createThemedStyles(() =>
       fontSize: 10,
       fontWeight: '700' as const,
       color: colors.dark.textSecondary,
+      textAlign: 'center',
     },
     pnlPeriodTextActive: {
       color: colors.dark.background,
@@ -2210,6 +2229,7 @@ const styles = createThemedStyles(() =>
     pnlLoadingText: {
       fontSize: 10.5,
       color: colors.dark.textMuted,
+      textAlign: 'right',
     },
     pnlEmpty: {
       fontSize: 10,
@@ -2237,6 +2257,7 @@ const styles = createThemedStyles(() =>
       fontSize: 10,
       fontWeight: '800' as const,
       color: colors.dark.green,
+      textAlign: 'center',
     },
     pnlToman: {
       fontSize: 11,
@@ -2257,10 +2278,12 @@ const styles = createThemedStyles(() =>
       fontSize: 10.5,
       fontWeight: '700' as const,
       color: colors.dark.text,
+      textAlign: 'right',
     },
     pnlRowValue: {
       fontSize: 10.5,
       fontWeight: '800' as const,
+      textAlign: 'right',
     },
     pnlNote: {
       fontSize: 8.5,
@@ -2287,6 +2310,7 @@ const styles = createThemedStyles(() =>
       fontSize: 12.5,
       fontWeight: '800' as const,
       color: colors.dark.accent,
+      textAlign: 'center',
     },
     emptyState: {
       alignItems: 'center',
@@ -2301,6 +2325,7 @@ const styles = createThemedStyles(() =>
       fontSize: 13,
       fontWeight: '800' as const,
       color: colors.dark.text,
+      textAlign: 'center',
     },
     emptySubtitle: {
       fontSize: 10.5,

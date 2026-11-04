@@ -799,6 +799,7 @@ const styles = createThemedStyles(() =>
       fontWeight: '800' as const,
       color: colors.dark.text,
       letterSpacing: 0.2,
+      textAlign: 'center',
     },
     ipWrap: {
       marginBottom: 16,
@@ -812,7 +813,7 @@ const styles = createThemedStyles(() =>
       borderColor: colors.dark.cardBorder,
     },
     sectionHeader: {
-      flexDirection: 'row-reverse',
+      flexDirection: 'row',
       alignItems: 'center',
       gap: 8,
       marginBottom: 14,
@@ -855,7 +856,7 @@ const styles = createThemedStyles(() =>
     },
     alertBtn: {
       flex: 1,
-      flexDirection: 'row-reverse',
+      flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
       gap: 6,
@@ -893,7 +894,7 @@ const styles = createThemedStyles(() =>
     },
     alertBatteryBtn: {
       marginTop: 10,
-      flexDirection: 'row-reverse',
+      flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
       gap: 6,
@@ -957,11 +958,13 @@ const styles = createThemedStyles(() =>
       fontSize: 15,
       fontWeight: '700' as const,
       color: colors.dark.text,
+      textAlign: 'right',
     },
     updateVersion: {
       fontSize: 11.5,
       fontWeight: '700' as const,
       color: colors.dark.accent,
+      textAlign: 'right',
     },
     updateHint: {
       fontSize: 11.5,
@@ -990,6 +993,7 @@ const styles = createThemedStyles(() =>
       fontSize: 12,
       fontWeight: '800' as const,
       color: colors.dark.background,
+      textAlign: 'center',
     },
     resultRow: {
       flexDirection: 'row',
@@ -1041,6 +1045,7 @@ const styles = createThemedStyles(() =>
       fontSize: 12.5,
       fontWeight: '800' as const,
       color: colors.dark.background,
+      textAlign: 'center',
     },
 
     themeRow: {
@@ -1067,6 +1072,7 @@ const styles = createThemedStyles(() =>
       fontSize: 14,
       color: colors.dark.textSecondary,
       fontWeight: '600' as const,
+      textAlign: 'center',
     },
     themeOptionTextActive: {
       color: colors.dark.background,
@@ -1078,7 +1084,7 @@ const styles = createThemedStyles(() =>
       overflow: 'hidden',
     },
     helpHeader: {
-      flexDirection: 'row',
+      flexDirection: 'row-reverse',
       alignItems: 'center',
       justifyContent: 'space-between',
       paddingHorizontal: 12,
@@ -1100,7 +1106,7 @@ const styles = createThemedStyles(() =>
       paddingBottom: 14,
     },
     aboutRow: {
-      flexDirection: 'row-reverse',
+      flexDirection: 'row',
       alignItems: 'center',
       gap: 12,
       marginBottom: 4,
@@ -1145,6 +1151,7 @@ const styles = createThemedStyles(() =>
       fontSize: 12,
       fontWeight: '700' as const,
       color: colors.dark.accent,
+      textAlign: 'right',
     },
   })
 );
