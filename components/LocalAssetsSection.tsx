@@ -879,7 +879,7 @@ const styles = createThemedStyles(() =>
       borderColor: colors.dark.accent + '26',
     },
     header: {
-      flexDirection: 'row',
+      flexDirection: 'row-reverse',
       alignItems: 'center',
       gap: 8,
       marginBottom: 12,
@@ -934,7 +934,7 @@ const styles = createThemedStyles(() =>
       color: colors.dark.text,
     },
     assetRow: {
-      flexDirection: 'row',
+      flexDirection: 'row-reverse',
       alignItems: 'center',
       gap: 8,
       paddingVertical: 8,
@@ -979,7 +979,7 @@ const styles = createThemedStyles(() =>
     },
     assetValueCol: {
       minWidth: 92,
-      alignItems: 'flex-start',
+      alignItems: 'flex-end',
     },
     assetValue: {
       fontSize: 12,
@@ -1032,7 +1032,7 @@ const styles = createThemedStyles(() =>
       borderColor: colors.dark.green + '33',
     },
     totalRow: {
-      flexDirection: 'row',
+      flexDirection: 'row-reverse',
       alignItems: 'center',
       gap: 6,
       marginBottom: 6,
@@ -1078,7 +1078,7 @@ const styles = createThemedStyles(() =>
       borderColor: colors.dark.border,
     },
     pnlHeadRow: {
-      flexDirection: 'row',
+      flexDirection: 'row-reverse',
       alignItems: 'center',
       gap: 6,
       marginBottom: 8,
@@ -1091,7 +1091,7 @@ const styles = createThemedStyles(() =>
       textAlign: 'right',
     },
     pnlPeriodRow: {
-      flexDirection: 'row',
+      flexDirection: 'row-reverse',
       gap: 6,
       marginBottom: 10,
     },
@@ -1160,7 +1160,7 @@ const styles = createThemedStyles(() =>
       textAlign: 'center',
     },
     pnlRow: {
-      flexDirection: 'row',
+      flexDirection: 'row-reverse',
       justifyContent: 'space-between',
       alignItems: 'center',
       paddingVertical: 5,
@@ -1202,7 +1202,7 @@ const styles = createThemedStyles(() =>
       borderColor: colors.dark.accent + '2E',
       borderRadius: 10,
       padding: 10,
-      flexDirection: 'row',
+      flexDirection: 'row-reverse',
       alignItems: 'center',
       gap: 8,
       marginTop: 6,

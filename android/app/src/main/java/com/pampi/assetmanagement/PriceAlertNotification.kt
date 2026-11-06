@@ -1,5 +1,6 @@
 package com.pampi.assetmanagement
 
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -7,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.os.Build
+import android.view.View
 import androidx.core.app.NotificationCompat
 
 /**
@@ -86,9 +88,29 @@ object PriceAlertNotification {
             .setCategory(NotificationCompat.CATEGORY_STATUS)
         largeIcon?.let { builder.setLargeIcon(it) }
         try {
-            nm.notify(alertId.hashCode(), builder.build())
+            nm.notify(alertId.hashCode(), buildRtl(ctx, builder))
         } catch (_: SecurityException) {
             // اجازهٔ نوتیفیکیشن داده نشده (اندروید ۱۳+) — بی‌صدا رد می‌شود
+        }
+    }
+
+    /**
+     * v1.9.0 — اعلان همیشه راست‌به‌چپ رندر می‌شود: آیکون برنامه سمت راست و
+     * متن (مثل «ریزش قیمت») بعد از آن — مستقل از زبان گوشی (درخواست کاربر).
+     * recoverBuilder از API 24+ در دسترس است (minSdk همین اپ ۲۴ است).
+     */
+    private fun buildRtl(ctx: Context, builder: NotificationCompat.Builder): Notification {
+        val base = builder.build()
+        return if (Build.VERSION.SDK_INT >= 24) {
+            try {
+                Notification.Builder.recoverBuilder(ctx, base)
+                    .setLayoutDirection(View.LAYOUT_DIRECTION_RTL)
+                    .build()
+            } catch (_: Exception) {
+                base
+            }
+        } else {
+            base
         }
     }
 
@@ -132,7 +154,7 @@ object PriceAlertNotification {
             .setCategory(NotificationCompat.CATEGORY_STATUS)
         largeIcon?.let { builder.setLargeIcon(it) }
         return try {
-            nm.notify("app_update".hashCode(), builder.build())
+            nm.notify("app_update".hashCode(), buildRtl(ctx, builder))
             true
         } catch (_: SecurityException) {
             false

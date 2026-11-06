@@ -425,8 +425,8 @@ const styles = createThemedStyles(() =>
       fontWeight: '800' as const,
       color: colors.dark.accent,
       marginBottom: 8,
-      // v1.6.0 — سرتیتر بخش‌ها به سمت مخالف (چپ) منتقل شد به درخواست کاربر
-      textAlign: 'left',
+      // v1.9.0 — سرتیتر بخش‌ها (طلا و فلزات / ارز / ارزهای دیجیتال) راست‌چین (درخواست کاربر)
+      textAlign: 'right',
     },
     priceBlock: {
       backgroundColor: colors.dark.card,
@@ -446,7 +446,8 @@ const styles = createThemedStyles(() =>
       borderRadius: 8,
       paddingVertical: 8,
       paddingHorizontal: 6,
-      alignItems: 'center',
+      // v1.9.0 — تیتر و قیمت داخل چیپ راست‌چین (درخواست کاربر)
+      alignItems: 'flex-end',
       borderWidth: 1,
       borderColor: colors.dark.border,
     },
@@ -461,13 +462,14 @@ const styles = createThemedStyles(() =>
     priceChipLabel: {
       fontSize: 10,
       color: colors.dark.textSecondary,
-      textAlign: 'center',
+      textAlign: 'right',
     },
     priceChipValue: {
       fontSize: 14.5,
       fontWeight: '800' as const,
       color: colors.dark.text,
       marginTop: 2,
+      textAlign: 'right',
     },
     priceChipHost: {
       position: 'relative',
@@ -506,7 +508,8 @@ const styles = createThemedStyles(() =>
       fontSize: 9,
       color: colors.dark.textSecondary,
       marginTop: 6,
-      textAlign: 'left',
+      // v1.9.0 — «منبع: TGJU…» راست‌چین (درخواست کاربر)
+      textAlign: 'right',
     },
     talineCard: {
       marginTop: 10,

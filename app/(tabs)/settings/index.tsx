@@ -466,12 +466,6 @@ function PriceAlertCard() {
       <View style={styles.alertSwitchRow}>
         <View style={styles.alertRowText}>
           <Text style={styles.alertRowTitle}>اعلان رشد و ریزش، حتی وقتی برنامه بسته است</Text>
-          <Text style={styles.hintText}>
-            سرویس پس‌زمینه (هر ~۱۵ دقیقه و بلافاصله بعد از وصل‌شدن اینترنت) قیمت‌ها را چک
-            می‌کند: کوین‌های کیف پول و صرافی از آستانهٔ کوین، طلای ۱۸ عیار/سکه/دلار از آستانهٔ
-            طلا و دلار بالاتر بروند یا پایین‌تر بیایند، همان لحظه نوتیفیکیشن می‌آید — با لوگوی
-            برنامه و قیمت درست به تومان.
-          </Text>
         </View>
         <Switch
           value={cfg.enabled}
@@ -481,6 +475,14 @@ function PriceAlertCard() {
           testID="price-alert-switch"
         />
       </View>
+      {/* v1.9.0 — متن توضیح بیرون از ردیف سوییچ آمد تا تمام‌عرض کادر را بگیرد
+          (قبلاً نصف کادر بود و وسط جمله می‌شکست — درخواست کاربر) */}
+      <Text style={styles.hintText}>
+        سرویس پس‌زمینه (هر ~۱۵ دقیقه و بلافاصله بعد از وصل‌شدن اینترنت) قیمت‌ها را چک
+        می‌کند: کوین‌های کیف پول و صرافی از آستانهٔ کوین، طلای ۱۸ عیار/سکه/دلار از آستانهٔ
+        طلا و دلار بالاتر بروند یا پایین‌تر بیایند، همان لحظه نوتیفیکیشن می‌آید — با لوگوی
+        برنامه و قیمت درست به تومان.
+      </Text>
 
       {cfg.enabled && (
         <>
@@ -949,7 +951,8 @@ const styles = createThemedStyles(() =>
       gap: 10,
     },
     updateHeadRow: {
-      flexDirection: 'row',
+      // v1.9.0 — «بروزرسانی برنامه» راست، «نصب‌شده: …» روبروش چپ (درخواست کاربر)
+      flexDirection: 'row-reverse',
       alignItems: 'center',
       justifyContent: 'space-between',
       gap: 8,
@@ -973,7 +976,8 @@ const styles = createThemedStyles(() =>
       textAlign: 'right',
     },
     checkBtn: {
-      flexDirection: 'row',
+      // v1.9.0 — آیکون گیتهاب سمت راست متن
+      flexDirection: 'row-reverse',
       alignItems: 'center',
       justifyContent: 'center',
       gap: 6,
@@ -996,7 +1000,8 @@ const styles = createThemedStyles(() =>
       textAlign: 'center',
     },
     resultRow: {
-      flexDirection: 'row',
+      // v1.9.0 — آیکون وضعیت سمت راست متن نتیجه
+      flexDirection: 'row-reverse',
       alignItems: 'center',
       gap: 8,
     },
@@ -1032,7 +1037,8 @@ const styles = createThemedStyles(() =>
       textAlign: 'right',
     },
     downloadBtn: {
-      flexDirection: 'row',
+      // v1.9.0 — آیکون دانلود سمت راست متن
+      flexDirection: 'row-reverse',
       alignItems: 'center',
       justifyContent: 'center',
       gap: 8,

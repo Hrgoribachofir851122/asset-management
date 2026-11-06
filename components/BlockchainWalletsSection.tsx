@@ -1346,7 +1346,7 @@ const styles = createThemedStyles(() =>
       borderColor: colors.dark.accent + '33',
     },
     portfolioHeader: {
-      flexDirection: 'row',
+      flexDirection: 'row-reverse',
       alignItems: 'center',
       gap: 8,
       marginBottom: 12,
@@ -1368,7 +1368,7 @@ const styles = createThemedStyles(() =>
       marginBottom: 10,
     },
     portfolioValueRow: {
-      flexDirection: 'row',
+      flexDirection: 'row-reverse',
       alignItems: 'center',
       gap: 6,
       backgroundColor: colors.dark.card,
@@ -1388,7 +1388,7 @@ const styles = createThemedStyles(() =>
       color: colors.dark.green,
     },
     tomanPriceRow: {
-      flexDirection: 'row',
+      flexDirection: 'row-reverse',
       alignItems: 'center',
       justifyContent: 'space-between',
       backgroundColor: colors.dark.surfaceLight,
@@ -1840,7 +1840,7 @@ const styles = createThemedStyles(() =>
       borderColor: colors.dark.border,
     },
     walletHeader: {
-      flexDirection: 'row',
+      flexDirection: 'row-reverse',
       alignItems: 'center',
       gap: 8,
     },
@@ -1952,9 +1952,10 @@ const styles = createThemedStyles(() =>
     walletAddress: {
       fontSize: 10,
       color: colors.dark.textMuted,
+      textAlign: 'right',
     },
     walletNetChips: {
-      flexDirection: 'row',
+      flexDirection: 'row-reverse',
       flexWrap: 'wrap',
       gap: 3,
       marginTop: 2,
@@ -1969,7 +1970,7 @@ const styles = createThemedStyles(() =>
       fontWeight: '800' as const,
     },
     walletTotalCol: {
-      alignItems: 'flex-end',
+      alignItems: 'flex-start',
       gap: 2,
       maxWidth: 130,
     },
@@ -2042,7 +2043,7 @@ const styles = createThemedStyles(() =>
       paddingVertical: 8,
     },
     tokenRow: {
-      flexDirection: 'row',
+      flexDirection: 'row-reverse',
       alignItems: 'center',
       gap: 8,
       paddingVertical: 7,
@@ -2100,7 +2101,7 @@ const styles = createThemedStyles(() =>
       color: colors.dark.text,
       // v1.6.0 — «چیدمان ستون نام ارز برعکس شود: نام ارز کنار آیکون خودش» —
       // نماد لاتین (ETH/USDT) بلافاصله بعد از آیکون می‌نشیند (سمت چپ ستون).
-      textAlign: 'left',
+      textAlign: 'right',
     },
     tokenNetTag: {
       fontSize: 8.5,
@@ -2110,7 +2111,7 @@ const styles = createThemedStyles(() =>
       fontSize: 9,
       color: colors.dark.textMuted,
       // v1.6.0 — همراستا با نماد، کنار آیکون
-      textAlign: 'left',
+      textAlign: 'right',
     },
     tokenPnl: {
       fontSize: 9,
@@ -2137,7 +2138,7 @@ const styles = createThemedStyles(() =>
       fontWeight: '700' as const,
     },
     tokenValueCol: {
-      alignItems: 'flex-end',
+      alignItems: 'flex-start',
       minWidth: 70,
     },
     tokenValue: {
@@ -2182,7 +2183,7 @@ const styles = createThemedStyles(() =>
       borderTopColor: colors.dark.border,
     },
     pnlHeadRow: {
-      flexDirection: 'row',
+      flexDirection: 'row-reverse',
       alignItems: 'center',
       gap: 6,
       marginBottom: 8,
@@ -2195,7 +2196,7 @@ const styles = createThemedStyles(() =>
       textAlign: 'right',
     },
     pnlPeriodRow: {
-      flexDirection: 'row',
+      flexDirection: 'row-reverse',
       gap: 5,
       marginBottom: 10,
     },
@@ -2267,7 +2268,7 @@ const styles = createThemedStyles(() =>
       marginBottom: 6,
     },
     pnlRow: {
-      flexDirection: 'row',
+      flexDirection: 'row-reverse',
       justifyContent: 'space-between',
       alignItems: 'center',
       paddingVertical: 4,

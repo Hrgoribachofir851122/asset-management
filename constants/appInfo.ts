@@ -14,11 +14,11 @@ export const APP_SOURCE = 'استخراج‌شده از اپ پامپی (pampay-
 
 /** نسخه دقیق نصب‌شده — از پیکربندی Native (app.json هنگام بیلد) */
 export const APP_VERSION: string =
-  (Constants.expoConfig?.version as string | undefined) ?? '1.8.0';
+  (Constants.expoConfig?.version as string | undefined) ?? '1.9.0';
 
 /** versionCode اندروید (برای نمایش «نسخه 1.3.1 (5)») */
 export const APP_VERSION_CODE: number =
-  (Constants.expoConfig?.android as { versionCode?: number } | undefined)?.versionCode ?? 21;
+  (Constants.expoConfig?.android as { versionCode?: number } | undefined)?.versionCode ?? 22;
 
 /** نام سازندهٔ برنامه (درخواست کاربر v1.2.0) */
 export const APP_DEVELOPER = 'trade_master65';

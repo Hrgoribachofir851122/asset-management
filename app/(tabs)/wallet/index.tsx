@@ -3650,19 +3650,7 @@ function WalletItem({
       {/* v1.4.2 — سنسور نامرئی: وقتی کارت بسته است هم سیگنال ردیف‌ها شمرده می‌شود */}
       <BlinkGroupSensor group={exchGroup} items={sensorItems} />
       <Pressable style={styles.walletHeader} onPress={onToggle}>
-        <View style={styles.walletActions}>
-          <Pressable style={styles.actionBtn} onPress={onRefresh} hitSlop={6}>
-            <RefreshCw size={14} color={colors.dark.accent} />
-          </Pressable>
-          <Pressable style={styles.actionBtn} onPress={onRemove} hitSlop={6}>
-            <Trash2 size={14} color={colors.dark.red} />
-          </Pressable>
-          {isExpanded ? (
-            <ChevronUp size={16} color={colors.dark.textMuted} />
-          ) : (
-            <ChevronDown size={16} color={colors.dark.textMuted} />
-          )}
-        </View>
+        {/* v1.9.0 — ترتیب از راست: نام صرافی + کلید | دلاری و تومانی | حذف، رفرش، فلش (درخواست کاربر) */}
         <View style={styles.walletLeft}>
           <View style={styles.walletIcon}>
             <Key size={18} color={colors.dark.blue} />
@@ -3699,6 +3687,19 @@ function WalletItem({
             >
               {data.totalPnlUsd > 0 ? '▲' : '▼'} {formatSignedUsd(data.totalPnlUsd)}
             </Text>
+          )}
+        </View>
+        <View style={styles.walletActions}>
+          <Pressable style={styles.actionBtn} onPress={onRemove} hitSlop={6}>
+            <Trash2 size={14} color={colors.dark.red} />
+          </Pressable>
+          <Pressable style={styles.actionBtn} onPress={onRefresh} hitSlop={6}>
+            <RefreshCw size={14} color={colors.dark.accent} />
+          </Pressable>
+          {isExpanded ? (
+            <ChevronUp size={16} color={colors.dark.textMuted} />
+          ) : (
+            <ChevronDown size={16} color={colors.dark.textMuted} />
           )}
         </View>
       </Pressable>
@@ -4806,7 +4807,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
     fontWeight: '800' as const,
   },
   sectionTabBar: {
-    flexDirection: 'row',
+    flexDirection: 'row-reverse',
     gap: 6,
     paddingVertical: 4,
     marginBottom: 6,
@@ -4848,7 +4849,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
     gap: 4,
   },
   portfolioBreakdownRow: {
-    flexDirection: 'row',
+    flexDirection: 'row-reverse',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
@@ -4870,7 +4871,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
     borderColor: colors.dark.accent + '33',
   },
   portfolioHeader: {
-    flexDirection: 'row',
+    flexDirection: 'row-reverse',
     alignItems: 'center',
     gap: 8,
     marginBottom: 12,
@@ -4892,7 +4893,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
     marginBottom: 10,
   },
   portfolioValueRow: {
-    flexDirection: 'row',
+    flexDirection: 'row-reverse',
     alignItems: 'center',
     gap: 6,
     backgroundColor: colors.dark.card,
@@ -4912,7 +4913,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
     color: colors.dark.green,
   },
   tomanPriceRow: {
-    flexDirection: 'row',
+    flexDirection: 'row-reverse',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
@@ -4937,7 +4938,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
   },
   // v1.8.0 — بازخورد رفرش مجموع دارایی‌ها (پیام گذرا + ساعت آخرین به‌روزرسانی)
   refreshFeedbackRow: {
-    flexDirection: 'row',
+    flexDirection: 'row-reverse',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 8,
@@ -4970,13 +4971,13 @@ const styles = createThemedStyles(() => StyleSheet.create({
     overflow: 'hidden',
   },
   walletHeader: {
-    flexDirection: 'row',
+    flexDirection: 'row-reverse',
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 14,
   },
   walletLeft: {
-    flexDirection: 'row',
+    flexDirection: 'row-reverse',
     alignItems: 'center',
     gap: 10,
     flex: 1,
@@ -5003,13 +5004,14 @@ const styles = createThemedStyles(() => StyleSheet.create({
     color: colors.dark.textMuted,
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     marginTop: 2,
+    textAlign: 'right',
   },
   walletRight: {
-    alignItems: 'flex-end',
+    alignItems: 'flex-start',
     gap: 4,
   },
   walletHeaderTop: {
-    flexDirection: 'row',
+    flexDirection: 'row-reverse',
     alignItems: 'center',
     gap: 6,
   },
@@ -5182,7 +5184,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
     marginBottom: 6,
   },
   sectionHeader: {
-    flexDirection: 'row',
+    flexDirection: 'row-reverse',
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: colors.dark.surface,
@@ -5208,7 +5210,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
     fontWeight: '700' as const,
   },
   balanceRow: {
-    flexDirection: 'row',
+    flexDirection: 'row-reverse',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingVertical: 6,
@@ -5241,7 +5243,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
     fontWeight: '700' as const,
     color: colors.dark.text,
     // v1.6.0 — نام ارز کنار آیکون می‌نشیند (چپ‌چین)، مثل ردیف‌های کیف پول
-    textAlign: 'left',
+    textAlign: 'right',
   },
   assetAmount: {
     fontSize: 11,
@@ -5256,7 +5258,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
   },
   balanceRight: {
     width: 92,
-    alignItems: 'flex-end',
+    alignItems: 'flex-start',
     flexShrink: 0,
   },
   // ── v1.6.0/v1.7.0 — چیدمان سه‌ستونی ردیف دارایی صرافی ──
@@ -5265,7 +5267,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
   assetLeftGroup: {
     flex: 1,
     minWidth: 0,
-    flexDirection: 'row',
+    flexDirection: 'row-reverse',
     alignItems: 'center',
   },
   assetIconWrap: {
@@ -5273,7 +5275,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
     height: 32,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 8,
+    marginLeft: 8,
   },
   assetIconImg: {
     width: 28,
@@ -5357,7 +5359,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
     textAlign: 'right',
   },
   walletPnlRow: {
-    flexDirection: 'row',
+    flexDirection: 'row-reverse',
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: colors.dark.card,
@@ -5574,7 +5576,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
     padding: 12,
   },
   pnlSectionHeader: {
-    flexDirection: 'row',
+    flexDirection: 'row-reverse',
     alignItems: 'center',
     gap: 8,
     marginBottom: 10,
@@ -5587,7 +5589,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
     textAlign: 'right',
   },
   pnlChipsRow: {
-    flexDirection: 'row',
+    flexDirection: 'row-reverse',
     gap: 6,
     marginBottom: 10,
   },
@@ -5618,7 +5620,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
     gap: 6,
   },
   pnlRow: {
-    flexDirection: 'row',
+    flexDirection: 'row-reverse',
     alignItems: 'center',
     justifyContent: 'space-between',
   },

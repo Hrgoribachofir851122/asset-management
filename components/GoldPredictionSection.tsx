@@ -399,7 +399,7 @@ const styles = createThemedStyles(() =>
       borderColor: colors.dark.border,
     },
     cardtitle: {
-      flexDirection: 'row',
+      flexDirection: 'row-reverse',
       alignItems: 'center',
       gap: 7,
       marginBottom: 8,
@@ -418,7 +418,7 @@ const styles = createThemedStyles(() =>
       textAlign: 'right',
     },
     priceRow: {
-      flexDirection: 'row',
+      flexDirection: 'row-reverse',
       justifyContent: 'space-between',
       alignItems: 'center',
       paddingVertical: 6,
@@ -451,7 +451,7 @@ const styles = createThemedStyles(() =>
       borderColor: colors.dark.accent + '44',
     },
     imeTop: {
-      flexDirection: 'row',
+      flexDirection: 'row-reverse',
       alignItems: 'center',
       gap: 6,
       marginBottom: 2,
@@ -528,7 +528,7 @@ const styles = createThemedStyles(() =>
       textAlign: 'center',
     },
     expiryBox: {
-      flexDirection: 'row',
+      flexDirection: 'row-reverse',
       alignItems: 'center',
       justifyContent: 'space-between',
       backgroundColor: colors.dark.accent + '12',
@@ -553,7 +553,7 @@ const styles = createThemedStyles(() =>
       textAlign: 'right',
     },
     futPriceRow: {
-      flexDirection: 'row',
+      flexDirection: 'row-reverse',
       justifyContent: 'space-between',
       paddingVertical: 4,
     },
@@ -637,7 +637,7 @@ const styles = createThemedStyles(() =>
     },
     // contracts table
     tableHeader: {
-      flexDirection: 'row',
+      flexDirection: 'row-reverse',
       paddingVertical: 5,
       borderBottomWidth: 1,
       borderBottomColor: colors.dark.border,
@@ -649,7 +649,7 @@ const styles = createThemedStyles(() =>
       textAlign: 'right',
     },
     tableRow: {
-      flexDirection: 'row',
+      flexDirection: 'row-reverse',
       paddingVertical: 7,
       borderBottomWidth: 1,
       borderBottomColor: colors.dark.border + '55',
