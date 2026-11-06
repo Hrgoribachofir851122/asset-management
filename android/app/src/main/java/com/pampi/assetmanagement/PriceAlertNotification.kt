@@ -97,15 +97,24 @@ object PriceAlertNotification {
     /**
      * v1.9.0 — اعلان همیشه راست‌به‌چپ رندر می‌شود: آیکون برنامه سمت راست و
      * متن (مثل «ریزش قیمت») بعد از آن — مستقل از زبان گوشی (درخواست کاربر).
-     * recoverBuilder از API 24+ در دسترس است (minSdk همین اپ ۲۴ است).
+     *
+     * Notification.Builder و RemoteViews متد setLayoutDirection مستقیم ندارند؛
+     * از این‌رو روی RemoteViews محتوای اعلان (API 24+) از طریق setInt و
+     * reflection روی view ریشه، setLayoutDirection(RTL) را فراخوانی می‌کنیم —
+     * این روش از API 3 در دسترس است و مطمئن‌ترین راه قفل‌کردن RTL اعلان است.
      */
     private fun buildRtl(ctx: Context, builder: NotificationCompat.Builder): Notification {
         val base = builder.build()
         return if (Build.VERSION.SDK_INT >= 24) {
             try {
-                Notification.Builder.recoverBuilder(ctx, base)
-                    .setLayoutDirection(View.LAYOUT_DIRECTION_RTL)
-                    .build()
+                val nBuilder = Notification.Builder.recoverBuilder(ctx, base)
+                nBuilder.createContentView()?.let { rv ->
+                    // android.R.id.icon نمای ریشهٔ آیکون در قالب اعلان است؛
+                    // setInt با reflection متد setLayoutDirection را روی آن صدا می‌زند.
+                    rv.setInt(android.R.id.icon, "setLayoutDirection", View.LAYOUT_DIRECTION_RTL)
+                    nBuilder.setCustomContentView(rv)
+                }
+                nBuilder.build()
             } catch (_: Exception) {
                 base
             }
