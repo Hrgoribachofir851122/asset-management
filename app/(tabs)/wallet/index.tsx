@@ -3127,6 +3127,9 @@ export default function WalletScreen() {
       {/* ── کارت مجموع دارایی‌ها ── */}
           <View style={styles.portfolioCard}>
             <View style={styles.portfolioHeader}>
+              {/* v1.9.1 — عنوان راست، رفرش سمت چپ روبروی عنوان (درخواست کاربر) */}
+              <Wallet size={20} color={colors.dark.accent} />
+              <Text style={styles.portfolioTitle}>مجموع دارایی‌ها (همه صرافی‌ها)</Text>
               <Pressable
                 style={styles.refreshAllBtn}
                 onPress={() => void handleRefreshAll()}
@@ -3139,8 +3142,6 @@ export default function WalletScreen() {
                   <RefreshCw size={16} color={colors.dark.accent} />
                 )}
               </Pressable>
-              <Wallet size={20} color={colors.dark.accent} />
-              <Text style={styles.portfolioTitle}>مجموع دارایی‌ها (همه صرافی‌ها)</Text>
             </View>
 
             <View style={styles.portfolioValues}>
@@ -3786,12 +3787,11 @@ function WalletItem({
 
           {data && data.balances.length > 0 && (
             <View style={styles.balanceList}>
-              {/* ── سربرگ‌های داخلی: همه + هر بخش ── */}
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.sectionTabBar}
-              >
+              {/* ── سربرگ‌های داخلی: همه + هر بخش ──
+                  v1.9.1 — اسکرول افقی روی اندروید row-reverse را نادیده می‌گیرد و
+                  چیپ‌ها از چپ شروع می‌شدند؛ حالا View معمولی با wrap — «همه» از
+                  راست شروع می‌شود (درخواست کاربر) ── */}
+              <View style={styles.sectionTabBar}>
                 <Pressable
                   style={[
                     styles.sectionTabChip,
@@ -3827,7 +3827,7 @@ function WalletItem({
                     </Text>
                   </Pressable>
                 ))}
-              </ScrollView>
+              </View>
 
               {/* ── v1.4.7: PnL دوره‌ای — بالای لیست ارزها (قبل از ردیف‌ها) ── */}
               <PnlPeriodSection
@@ -4808,6 +4808,7 @@ const styles = createThemedStyles(() => StyleSheet.create({
   },
   sectionTabBar: {
     flexDirection: 'row-reverse',
+    flexWrap: 'wrap',
     gap: 6,
     paddingVertical: 4,
     marginBottom: 6,
@@ -4907,7 +4908,8 @@ const styles = createThemedStyles(() => StyleSheet.create({
   },
   portfolioValueAmount: {
     flex: 1,
-    textAlign: 'right',
+    // v1.9.1 — قیمت سمت چپِ ردیف، روبروی برچسب نه چسبیده به آن (درخواست کاربر)
+    textAlign: 'left',
     fontSize: 15,
     fontWeight: '700' as const,
     color: colors.dark.green,

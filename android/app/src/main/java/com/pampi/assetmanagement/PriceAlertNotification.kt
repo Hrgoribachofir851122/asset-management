@@ -109,8 +109,8 @@ object PriceAlertNotification {
             try {
                 val nBuilder = Notification.Builder.recoverBuilder(ctx, base)
                 nBuilder.createContentView()?.let { rv ->
-                    // android.R.id.icon نمای ریشهٔ آیکون در قالب اعلان است؛
-                    // setInt با reflection متد setLayoutDirection را روی آن صدا می‌زند.
+                    // setInt با reflection متد setLayoutDirection را روی آیکون
+                    // (نمای شروع قالب اعلان) صدا می‌زند → چیدمان راست‌به‌چپ.
                     rv.setInt(android.R.id.icon, "setLayoutDirection", View.LAYOUT_DIRECTION_RTL)
                     nBuilder.setCustomContentView(rv)
                 }

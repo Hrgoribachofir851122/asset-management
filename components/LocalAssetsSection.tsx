@@ -224,6 +224,16 @@ export default function LocalAssetsSection({
     <View style={styles.card}>
       {/* ── header ── */}
       <View style={styles.header}>
+        {/* v1.9.1 — عنوان راست، فلش/رفرش سمت چپ روبروی عنوان (درخواست کاربر) */}
+        <Landmark size={18} color={colors.dark.accent} />
+        <Text style={styles.title}>دارایی ریالی و فلزات</Text>
+        <Pressable style={styles.chevronBtn} onPress={toggleExpanded} hitSlop={6}>
+          {expanded ? (
+            <ChevronUp size={14} color={colors.dark.textSecondary} />
+          ) : (
+            <ChevronDown size={14} color={colors.dark.textSecondary} />
+          )}
+        </Pressable>
         <Pressable style={styles.refreshBtn} onPress={refresh}>
           {pricesQuery.isFetching ? (
             <ActivityIndicator size="small" color={colors.dark.accent} />
@@ -231,15 +241,6 @@ export default function LocalAssetsSection({
             <RefreshCw size={14} color={colors.dark.accent} />
           )}
         </Pressable>
-        <Pressable style={styles.chevronBtn} onPress={toggleExpanded}>
-          {expanded ? (
-            <ChevronUp size={14} color={colors.dark.textSecondary} />
-          ) : (
-            <ChevronDown size={14} color={colors.dark.textSecondary} />
-          )}
-        </Pressable>
-        <Landmark size={18} color={colors.dark.accent} />
-        <Text style={styles.title}>دارایی ریالی و فلزات</Text>
       </View>
 
       {/* ── v1.4.16: مجموع کل — بالا (همیشه نمایان) ── */}

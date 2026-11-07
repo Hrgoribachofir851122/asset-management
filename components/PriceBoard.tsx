@@ -446,8 +446,8 @@ const styles = createThemedStyles(() =>
       borderRadius: 8,
       paddingVertical: 8,
       paddingHorizontal: 6,
-      // v1.9.0 — تیتر و قیمت داخل چیپ راست‌چین (درخواست کاربر)
-      alignItems: 'flex-end',
+      // v1.9.1 — تیتر و قیمت داخل چیپ وسط‌چین مثل کادرهای طلایین (درخواست کاربر)
+      alignItems: 'center',
       borderWidth: 1,
       borderColor: colors.dark.border,
     },
@@ -462,14 +462,17 @@ const styles = createThemedStyles(() =>
     priceChipLabel: {
       fontSize: 10,
       color: colors.dark.textSecondary,
-      textAlign: 'right',
+      // v1.9.1 — وسط‌چین (درخواست کاربر)
+      textAlign: 'center',
     },
     priceChipValue: {
-      fontSize: 14.5,
+      // v1.9.1 — فونت قیمت همهٔ کادرها درشت‌تر، مثل انس جهانی/ارزهای دیجیتال (درخواست کاربر)
+      fontSize: 17,
       fontWeight: '800' as const,
       color: colors.dark.text,
       marginTop: 2,
-      textAlign: 'right',
+      // v1.9.1 — وسط‌چین (درخواست کاربر)
+      textAlign: 'center',
     },
     priceChipHost: {
       position: 'relative',

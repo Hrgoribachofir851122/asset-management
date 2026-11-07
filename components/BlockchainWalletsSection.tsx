@@ -208,6 +208,9 @@ export default function BlockchainWalletsSection({
       {/* ── کارت مجموع کیف پول‌های بلاکچین ── */}
       <View style={styles.portfolioCard}>
         <View style={styles.portfolioHeader}>
+          {/* v1.9.1 — عنوان راست، رفرش سمت چپ روبروی عنوان (درخواست کاربر) */}
+          <LinkIcon size={20} color={colors.dark.accent} />
+          <Text style={styles.portfolioTitle}>مجموع کیف پول‌های بلاکچین</Text>
           <Pressable
             style={styles.refreshAllBtn}
             onPress={onRefreshAll}
@@ -219,8 +222,6 @@ export default function BlockchainWalletsSection({
               <RefreshCw size={16} color={colors.dark.accent} />
             )}
           </Pressable>
-          <LinkIcon size={20} color={colors.dark.accent} />
-          <Text style={styles.portfolioTitle}>مجموع کیف پول‌های بلاکچین</Text>
           {/* v1.8.0 — دکمه فقط هنگام رفرشِ دستیِ فعال قفل می‌شود (نه با
               isFetching پول‌ها)؛ اسپینر هر دو حالت را نشان می‌دهد. */}
         </View>
@@ -1040,29 +1041,8 @@ function BlockchainWalletCard({
         )}
       />
       <Pressable style={styles.walletHeader} onPress={onToggle}>
-        <View style={styles.walletActions}>
-          <Pressable style={styles.walletIconBtn} onPress={onRemove} hitSlop={8}>
-            <Trash2 size={13} color={colors.dark.red} />
-          </Pressable>
-          <Pressable style={styles.walletIconBtn} onPress={onEdit} hitSlop={8}>
-            <Pencil size={13} color={colors.dark.blue} />
-          </Pressable>
-          <Pressable style={styles.walletIconBtn} onPress={onRefresh} hitSlop={8} disabled={manualRefreshing}>
-            {manualRefreshing || isFetching ? (
-              <ActivityIndicator size="small" color={colors.dark.accent} />
-            ) : (
-              <RefreshCw size={13} color={data ? colors.dark.accent : colors.dark.textMuted} />
-            )}
-          </Pressable>
-          {isExpanded ? (
-            <ChevronUp size={15} color={colors.dark.textSecondary} />
-          ) : (
-            <ChevronDown size={15} color={colors.dark.textSecondary} />
-          )}
-        </View>
-        <View style={[styles.walletAvatar, { backgroundColor: meta.color + '33' }]}>
-          <Text style={[styles.walletAvatarText, { color: meta.color }]}>{meta.short}</Text>
-        </View>
+        {/* v1.9.1 — چیدمان سه‌ستونی (درخواست کاربر): راست نام+آدرس، وسط ارزش‌ها،
+            چپ دکمه‌ها به ترتیب حذف → ویرایش → رفرش → فلش */}
         <View style={styles.walletNameCol}>
           <View style={styles.walletNameRow}>
             <Text style={styles.walletName} numberOfLines={1}>
@@ -1117,6 +1097,27 @@ function BlockchainWalletCard({
                 </Text>
               )}
             </>
+          )}
+        </View>
+        {/* v1.9.1 — ستون آخر (چپ): حذف → ویرایش → رفرش → فلش (درخواست کاربر) */}
+        <View style={styles.walletActions}>
+          <Pressable style={styles.walletIconBtn} onPress={onRemove} hitSlop={8}>
+            <Trash2 size={13} color={colors.dark.red} />
+          </Pressable>
+          <Pressable style={styles.walletIconBtn} onPress={onEdit} hitSlop={8}>
+            <Pencil size={13} color={colors.dark.blue} />
+          </Pressable>
+          <Pressable style={styles.walletIconBtn} onPress={onRefresh} hitSlop={8} disabled={manualRefreshing}>
+            {manualRefreshing || isFetching ? (
+              <ActivityIndicator size="small" color={colors.dark.accent} />
+            ) : (
+              <RefreshCw size={13} color={data ? colors.dark.accent : colors.dark.textMuted} />
+            )}
+          </Pressable>
+          {isExpanded ? (
+            <ChevronUp size={15} color={colors.dark.textSecondary} />
+          ) : (
+            <ChevronDown size={15} color={colors.dark.textSecondary} />
           )}
         </View>
       </Pressable>
@@ -1382,7 +1383,8 @@ const styles = createThemedStyles(() =>
     },
     portfolioValueAmount: {
       flex: 1,
-      textAlign: 'right',
+      // v1.9.1 — قیمت سمت چپِ ردیف، روبروی برچسب (درخواست کاربر)
+      textAlign: 'left',
       fontSize: 15,
       fontWeight: '700' as const,
       color: colors.dark.green,
@@ -1989,7 +1991,8 @@ const styles = createThemedStyles(() =>
       textAlign: 'right',
     },
     walletActions: {
-      flexDirection: 'row',
+      // v1.9.1 — row-reverse تا ترتیب راست‌به‌چپِ «حذف، ویرایش، رفرش، فلش» حفظ شود
+      flexDirection: 'row-reverse',
       alignItems: 'center',
       gap: 6,
     },

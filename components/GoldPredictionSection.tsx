@@ -113,9 +113,7 @@ export default function GoldPredictionSection() {
       {/* ── IME prediction card ── */}
       <View style={styles.imeCard}>
         <View style={styles.imeTop}>
-          <Pressable style={styles.editBtn} onPress={() => setManualOpen(true)} hitSlop={6}>
-            <Pencil size={12} color={colors.dark.accent} />
-          </Pressable>
+          {/* v1.9.1 — عنوان راست، ویرایش سمت چپ روبروی عنوان (درخواست کاربر) */}
           <Landmark size={16} color={colors.dark.accent} />
           <Text style={styles.imeTitle}>آتی شمش طلای خام</Text>
           <View style={styles.imeSourceChip}>
@@ -129,6 +127,9 @@ export default function GoldPredictionSection() {
                     : 'cdn.ime.co.ir'}
             </Text>
           </View>
+          <Pressable style={styles.editBtn} onPress={() => setManualOpen(true)} hitSlop={6}>
+            <Pencil size={12} color={colors.dark.accent} />
+          </Pressable>
         </View>
         <Text style={styles.imeSub}>بازار آتی بورس کالای ایران — گروه شمش طلای خام</Text>
 
@@ -461,13 +462,14 @@ const styles = createThemedStyles(() =>
       fontWeight: '900' as const,
       color: colors.dark.text,
       textAlign: 'right',
+      // v1.9.1 — عنوان فضای وسط را می‌گیرد تا چیپ منبع و ویرایش به چپ بروند
+      flex: 1,
     },
     imeSourceChip: {
       backgroundColor: colors.dark.surface,
       borderRadius: 7,
       paddingHorizontal: 8,
       paddingVertical: 3,
-      marginStart: 'auto',
     },
     imeSourceText: {
       fontSize: 10,
